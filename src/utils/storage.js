@@ -7,6 +7,7 @@ const KEYS = {
   ROOMS: 'assetflow_rooms',
   INVESTMENTS: 'assetflow_investments',
   SETTINGS: 'assetflow_settings',
+  PIN_HASH: 'assetflow_pin_hash',
 };
 
 // Generic get/set for localStorage
@@ -83,6 +84,13 @@ export const getSettings = () => get(KEYS.SETTINGS) || { currency: '₹' };
 export const saveSettings = (settings) => {
   set(KEYS.SETTINGS, settings);
   saveToCloud('settings', settings);
+};
+
+// PIN Security
+export const getPinHash = () => get(KEYS.PIN_HASH) || '';
+export const savePinHash = (hash) => {
+  set(KEYS.PIN_HASH, hash);
+  saveToCloud('auth_pin', hash);
 };
 
 // Default vehicle list

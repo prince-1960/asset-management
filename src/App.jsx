@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Truck, Home, TrendingUp, Download,
-  AlertTriangle, Cloud, CloudOff, Database, X, Check, RefreshCw
+  AlertTriangle, Cloud, CloudOff, Database, X, Check, RefreshCw, Lock, Shield
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Fleet from './components/Fleet';
 import Rooms from './components/Rooms';
 import Investments from './components/Investments';
+import PinLock from './components/PinLock';
 import {
   getVehicles, saveVehicles,
   getRooms, saveRooms,
   getInvestments, saveInvestments,
+  getPinHash, savePinHash,
   daysUntil, loadAllFromCloud, saveToCloud
 } from './utils/storage';
 import { exportToExcel } from './utils/export';
@@ -32,6 +34,10 @@ export default function App() {
   const [showDbModal, setShowDbModal] = useState(false);
   const [anonKeyInput, setAnonKeyInput] = useState(getSupabaseAnonKey() || '');
 
+  // PIN Protection State
+  const [pinHash, setPinHash]         = useState(() => getPinHash());
+  const [isUnlocked, setIsUnlocked]   = useState(false);
+
   // Load from Supabase on mount
   useEffect(() => {
     let active = true;
@@ -44,12 +50,17 @@ export default function App() {
           if (cloudData.vehicles) setVehicles(cloudData.vehicles);
           if (cloudData.rooms) setRooms(cloudData.rooms);
           if (cloudData.investments) setInvestments(cloudData.investments);
+          if (cloudData.auth_pin) {
+            setPinHash(cloudData.auth_pin);
+            savePinHash(cloudData.auth_pin);
+          }
           setSyncStatus('synced');
         } else {
           // If cloud is empty, upload initial local data to seed Supabase
           saveToCloud('vehicles', vehicles);
           saveToCloud('rooms', rooms);
           saveToCloud('investments', investments);
+          if (pinHash) saveToCloud('auth_pin', pinHash);
           setSyncStatus('synced');
         }
       }).catch(() => {
@@ -64,6 +75,10 @@ export default function App() {
           if (key === 'vehicles' && value) setVehicles(value);
           if (key === 'rooms' && value) setRooms(value);
           if (key === 'investments' && value) setInvestments(value);
+          if (key === 'auth_pin' && value) {
+            setPinHash(value);
+            savePinHash(value);
+          }
           setSyncStatus('synced');
         })
         .subscribe();
@@ -86,6 +101,31 @@ export default function App() {
     setShowDbModal(false);
     window.location.reload();
   };
+
+  const handleSetPin = (hash) => {
+    setPinHash(hash);
+    savePinHash(hash);
+  };
+
+  const handleResetPin = () => {
+    if (confirm('Are you sure you want to change your PIN? You will be prompted to enter a new 4-digit PIN.')) {
+      setPinHash('');
+      savePinHash('');
+      setIsUnlocked(false);
+      setShowDbModal(false);
+    }
+  };
+
+  // If locked, render PIN screen only
+  if (!isUnlocked) {
+    return (
+      <PinLock
+        storedPinHash={pinHash}
+        onUnlock={() => setIsUnlocked(true)}
+        onSetPin={handleSetPin}
+      />
+    );
+  }
 
   // Count expiry alerts
   const expiryAlerts = vehicles.reduce((count, v) => {
@@ -165,6 +205,15 @@ export default function App() {
             )}
           </button>
 
+          <button
+            className="btn btn-secondary w-full"
+            style={{ fontSize: 12, justifyContent: 'center' }}
+            onClick={() => setIsUnlocked(false)}
+            title="Lock app now"
+          >
+            <Lock size={14} /> Lock Dashboard
+          </button>
+
           <button className="btn btn-secondary w-full" onClick={handleExport} id="btn-export-all">
             <Download size={15} />
             Export to Excel
@@ -180,6 +229,14 @@ export default function App() {
             <div className="topbar-subtitle">{pageTitle[page]?.subtitle}</div>
           </div>
           <div className="topbar-actions">
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setIsUnlocked(false)}
+              title="Lock dashboard"
+            >
+              <Lock size={14} /> Lock
+            </button>
+
             <button
               className="btn btn-secondary btn-sm"
               onClick={() => setShowDbModal(true)}
@@ -216,20 +273,38 @@ export default function App() {
         </main>
       </div>
 
-      {/* Database Setup Modal */}
+      {/* Database & Security Modal */}
       {showDbModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowDbModal(false)}>
           <div className="modal modal-lg">
             <div className="modal-header">
               <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Database size={18} /> Supabase Cloud Sync
+                <Database size={18} /> Cloud & Security Settings
               </div>
               <button className="btn btn-secondary btn-icon" onClick={() => setShowDbModal(false)}>
                 <X size={16} />
               </button>
             </div>
             <div className="modal-body">
+              {/* Security section */}
               <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', padding: 14, borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Shield size={16} color="var(--accent-indigo)" /> Master PIN Protection
+                    </div>
+                    <div className="text-sm text-muted" style={{ marginTop: 2 }}>
+                      {pinHash ? 'Your dashboard is protected with a 4-digit PIN.' : 'No PIN configured yet.'}
+                    </div>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" onClick={handleResetPin}>
+                    {pinHash ? 'Change PIN' : 'Set PIN'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Connected Supabase Project */}
+              <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-soft)', padding: 14, borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>🔗 Connected Supabase Project</div>
                 <div className="text-sm" style={{ color: 'var(--accent-indigo)', fontFamily: 'monospace' }}>
                   https://wtglmjmamlfcgevtfydp.supabase.co
