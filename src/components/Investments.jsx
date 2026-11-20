@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Plus, X, Edit2, Trash2, ChevronDown, ChevronUp,
-  Shield, Briefcase, Calendar, AlertCircle, Check,
+  Shield, Briefcase, Calendar, AlertTriangle, Check,
   Phone, User, FileText, IndianRupee, TrendingUp,
-  Clock, CheckCircle, XCircle, Info, Search, Filter,
+  Clock, CheckCircle, XCircle, Search, Sparkles
 } from 'lucide-react';
 import {
   genId, formatDate, formatCurrency, daysUntil,
@@ -11,7 +11,10 @@ import {
 } from '../utils/storage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const INSURERS = ['LIC', 'Aditya Birla Life', 'Max Life', 'HDFC Life', 'SBI Life', 'ICICI Prudential', 'Bajaj Allianz', 'Tata AIA', 'Kotak Life', 'PNB MetLife', 'Other'];
+const INSURERS = [
+  'LIC', 'Aditya Birla Capital', 'Max Life', 'HDFC Life', 'SBI Life',
+  'ICICI Prudential', 'Bajaj Allianz', 'Tata AIA', 'Kotak Life', 'PNB MetLife', 'Other'
+];
 const POLICY_TYPES = ['Term', 'Endowment', 'Money Back', 'ULIP', 'Whole Life', 'Health', 'Annuity', 'Child Plan'];
 const FREQUENCIES = ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'One-Time'];
 const PORTFOLIO_TYPES = ['SIP', 'FD', 'RD', 'Mutual Fund', 'PPF', 'NPS', 'Stocks', 'Gold', 'SWP', 'Bonds', 'ETF', 'Other'];
@@ -19,12 +22,14 @@ const PLATFORMS = ['Zerodha', 'Groww', 'Upstox', 'HDFC Bank', 'SBI', 'ICICI Bank
 const STATUSES = ['Active', 'Lapsed', 'Paid Up', 'Matured', 'Surrendered'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const getFrequencyMonths = (freq) => ({ Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12, 'One-Time': 0 }[freq] || 12);
+const getFrequencyMonths = (freq) => ({
+  Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12, 'One-Time': 0
+}[freq] || 12);
 
 const getNextDueDate = (startDate, frequency) => {
-  if (!startDate || !frequency || frequency === 'One-Time') return null;
+  if (!startDate || !frequency || frequency === 'One-Time') return '';
   const intervalMonths = getFrequencyMonths(frequency);
-  if (!intervalMonths) return null;
+  if (!intervalMonths) return '';
   const start = new Date(startDate);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -35,32 +40,17 @@ const getNextDueDate = (startDate, frequency) => {
   return next.toISOString().split('T')[0];
 };
 
-const daysLabel = (days) => {
-  if (days === null || days === undefined) return '';
-  if (days < 0) return `${Math.abs(days)}d overdue`;
-  if (days === 0) return 'Due Today!';
-  if (days <= 7) return `${days}d left`;
-  if (days <= 30) return `${days}d left`;
-  return `${days}d`;
+const getStatusBadgeClass = (status) => {
+  switch (status) {
+    case 'Active': return 'badge-green';
+    case 'Lapsed': return 'badge-red';
+    case 'Matured': return 'badge-blue';
+    case 'Paid Up': return 'badge-purple';
+    default: return 'badge-amber';
+  }
 };
 
-const daysColor = (days) => {
-  if (days === null) return '';
-  if (days < 0) return 'text-red-400';
-  if (days <= 7) return 'text-red-400';
-  if (days <= 30) return 'text-yellow-400';
-  return 'text-green-400';
-};
-
-const badgeColor = (status) => {
-  const map = {
-    Active: '#10b981', Lapsed: '#ef4444', 'Paid Up': '#6b7280',
-    Matured: '#3b82f6', Surrendered: '#f59e0b',
-  };
-  return map[status] || '#6b7280';
-};
-
-// ─── Blank forms ──────────────────────────────────────────────────────────────
+// ─── Blank defaults ───────────────────────────────────────────────────────────
 const blankPolicy = () => ({
   id: genId(), policyNumber: '', policyName: '', insurer: 'LIC',
   type: 'Endowment', holderName: '', nominee: '',
@@ -81,133 +71,220 @@ const blankPortfolio = () => ({
 
 // ─── Policy Modal ─────────────────────────────────────────────────────────────
 function PolicyModal({ initial, onSave, onClose }) {
-  const [form, setForm] = useState(initial || blankPolicy());
+  const [form, setForm] = useState(() => initial || blankPolicy());
+
+  useEffect(() => {
+    setForm(initial || blankPolicy());
+  }, [initial]);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = () => {
-    if (!form.policyName.trim() && !form.policyNumber.trim()) return;
-    // Auto-calculate next due date if not set manually
+    if (!form.policyName?.trim() && !form.policyNumber?.trim()) return;
     const ndd = form.nextDueDate || getNextDueDate(form.startDate, form.premiumFrequency) || '';
     onSave({ ...form, nextDueDate: ndd });
   };
 
-  const inp = 'modal-input';
-  const label = 'modal-label';
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: 640 }} onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-lg">
         <div className="modal-header">
-          <h3 className="modal-title"><Shield size={16} /> {form.id && initial?.id ? 'Edit' : 'Add'} Insurance Policy</h3>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Shield size={18} color="var(--accent-indigo)" />
+            {initial?.id ? 'Edit Insurance Policy' : 'Add Insurance Policy'}
+          </div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
         </div>
-        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
 
-          {/* Row 1 */}
-          <div style={{ gridColumn: '1/-1' }}>
-            <label className={label}>Policy / Plan Name *</label>
-            <input className={inp} value={form.policyName} onChange={e => set('policyName', e.target.value)} placeholder="e.g. Jeevan Anand, Term Plan 40" />
-          </div>
-
-          <div>
-            <label className={label}>Insurer</label>
-            <select className={inp} value={form.insurer} onChange={e => set('insurer', e.target.value)}>
-              {INSURERS.map(i => <option key={i}>{i}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={label}>Policy Type</label>
-            <select className={inp} value={form.type} onChange={e => set('type', e.target.value)}>
-              {POLICY_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className={label}>Policy Number</label>
-            <input className={inp} value={form.policyNumber} onChange={e => set('policyNumber', e.target.value)} placeholder="123456789" />
-          </div>
-          <div>
-            <label className={label}>Status</label>
-            <select className={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
-            </select>
+        <div className="modal-body">
+          {/* Plan Name & Insurer */}
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Policy / Plan Name *</label>
+              <input
+                className="form-input"
+                value={form.policyName}
+                onChange={e => set('policyName', e.target.value)}
+                placeholder="e.g. Jeevan Anand, Term 360"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Insurance Company</label>
+              <select className="form-input" value={form.insurer} onChange={e => set('insurer', e.target.value)}>
+                {INSURERS.map(i => <option key={i} value={i}>{i}</option>)}
+              </select>
+            </div>
           </div>
 
-          {/* Holder Info */}
-          <div>
-            <label className={label}>Policy Holder Name</label>
-            <input className={inp} value={form.holderName} onChange={e => set('holderName', e.target.value)} placeholder="e.g. Mom, Dad, Self" />
-          </div>
-          <div>
-            <label className={label}>Nominee</label>
-            <input className={inp} value={form.nominee} onChange={e => set('nominee', e.target.value)} placeholder="Nominee name" />
-          </div>
-
-          {/* Financial */}
-          <div>
-            <label className={label}>Sum Assured (₹)</label>
-            <input className={inp} type="number" value={form.sumAssured} onChange={e => set('sumAssured', e.target.value)} placeholder="500000" />
-          </div>
-          <div>
-            <label className={label}>Maturity Amount (₹)</label>
-            <input className={inp} type="number" value={form.maturityAmount} onChange={e => set('maturityAmount', e.target.value)} placeholder="800000" />
-          </div>
-
-          <div>
-            <label className={label}>Premium Amount (₹)</label>
-            <input className={inp} type="number" value={form.premiumAmount} onChange={e => set('premiumAmount', e.target.value)} placeholder="12000" />
-          </div>
-          <div>
-            <label className={label}>Premium Frequency</label>
-            <select className={inp} value={form.premiumFrequency} onChange={e => set('premiumFrequency', e.target.value)}>
-              {FREQUENCIES.map(f => <option key={f}>{f}</option>)}
-            </select>
+          {/* Type, Number, Status */}
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Policy Type</label>
+              <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+                {POLICY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Policy Number</label>
+              <input
+                className="form-input"
+                value={form.policyNumber}
+                onChange={e => set('policyNumber', e.target.value)}
+                placeholder="e.g. 518291039"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="form-input" value={form.status} onChange={e => set('status', e.target.value)}>
+                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
 
-          {/* Dates */}
-          <div>
-            <label className={label}>Start Date</label>
-            <input className={inp} type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)} />
-          </div>
-          <div>
-            <label className={label}>Maturity Date</label>
-            <input className={inp} type="date" value={form.maturityDate} onChange={e => set('maturityDate', e.target.value)} />
+          {/* Holder & Nominee */}
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Policy Holder Name</label>
+              <input
+                className="form-input"
+                value={form.holderName}
+                onChange={e => set('holderName', e.target.value)}
+                placeholder="e.g. Mom, Self, Sister"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Nominee Name</label>
+              <input
+                className="form-input"
+                value={form.nominee}
+                onChange={e => set('nominee', e.target.value)}
+                placeholder="Nominee details"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className={label}>Premium Payment End Date</label>
-            <input className={inp} type="date" value={form.paymentEndDate} onChange={e => set('paymentEndDate', e.target.value)} />
-          </div>
-          <div>
-            <label className={label}>Next Due Date (auto-calculated)</label>
-            <input className={inp} type="date" value={form.nextDueDate} onChange={e => set('nextDueDate', e.target.value)} />
+          {/* Premium & Frequency */}
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Premium Amount (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.premiumAmount}
+                onChange={e => set('premiumAmount', e.target.value)}
+                placeholder="e.g. 15000"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Frequency</label>
+              <select className="form-input" value={form.premiumFrequency} onChange={e => set('premiumFrequency', e.target.value)}>
+                {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
           </div>
 
-          {/* Contact */}
-          <div>
-            <label className={label}>OTP Phone Number</label>
-            <input className={inp} value={form.otpPhone} onChange={e => set('otpPhone', e.target.value)} placeholder="+91 9876543210" />
+          {/* Sum Assured & Maturity Amount */}
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Sum Assured (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.sumAssured}
+                onChange={e => set('sumAssured', e.target.value)}
+                placeholder="e.g. 1000000"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Expected Maturity Amount (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.maturityAmount}
+                onChange={e => set('maturityAmount', e.target.value)}
+                placeholder="e.g. 1850000"
+              />
+            </div>
           </div>
-          <div>
-            <label className={label}>Agent Name</label>
-            <input className={inp} value={form.agentName} onChange={e => set('agentName', e.target.value)} placeholder="Agent name" />
+
+          {/* Important Dates */}
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Policy Start Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.startDate}
+                onChange={e => set('startDate', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Premium Pay Till Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.paymentEndDate}
+                onChange={e => set('paymentEndDate', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Next Due Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.nextDueDate}
+                onChange={e => set('nextDueDate', e.target.value)}
+              />
+            </div>
           </div>
-          <div>
-            <label className={label}>Agent Phone</label>
-            <input className={inp} value={form.agentPhone} onChange={e => set('agentPhone', e.target.value)} placeholder="+91 9876543210" />
+
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Maturity Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.maturityDate}
+                onChange={e => set('maturityDate', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Linked OTP Phone Number</label>
+              <input
+                className="form-input"
+                value={form.otpPhone}
+                onChange={e => set('otpPhone', e.target.value)}
+                placeholder="e.g. +91 9876543210"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Agent Contact</label>
+              <input
+                className="form-input"
+                value={form.agentName}
+                onChange={e => set('agentName', e.target.value)}
+                placeholder="Agent name & number"
+              />
+            </div>
           </div>
 
           {/* Notes */}
-          <div style={{ gridColumn: '1/-1' }}>
-            <label className={label}>Notes</label>
-            <textarea className={inp} value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} placeholder="Any additional info..." style={{ resize: 'vertical' }} />
+          <div className="form-group">
+            <label className="form-label">Notes & Remarks</label>
+            <textarea
+              className="form-input"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="Any additional info, branch, or locker location..."
+              style={{ minHeight: 60 }}
+            />
           </div>
         </div>
 
         <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={handleSave}>
-            <Check size={15} /> Save Policy
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={!form.policyName?.trim() && !form.policyNumber?.trim()}>
+            <Check size={14} /> Save Policy
           </button>
         </div>
       </div>
@@ -217,94 +294,154 @@ function PolicyModal({ initial, onSave, onClose }) {
 
 // ─── Portfolio Modal ──────────────────────────────────────────────────────────
 function PortfolioModal({ initial, onSave, onClose }) {
-  const [form, setForm] = useState(initial || blankPortfolio());
+  const [form, setForm] = useState(() => initial || blankPortfolio());
+
+  useEffect(() => {
+    setForm(initial || blankPortfolio());
+  }, [initial]);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = () => {
-    if (!form.name.trim() && !form.type) return;
+    if (!form.name?.trim() && !form.type) return;
     onSave({ ...form });
   };
 
-  const inp = 'modal-input';
-  const label = 'modal-label';
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-box" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-lg">
         <div className="modal-header">
-          <h3 className="modal-title"><Briefcase size={16} /> {initial?.id ? 'Edit' : 'Add'} Portfolio Item</h3>
-          <button className="modal-close" onClick={onClose}><X size={18} /></button>
+          <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Briefcase size={18} color="var(--accent-blue)" />
+            {initial?.id ? 'Edit Portfolio Item' : 'Add Investment / Asset'}
+          </div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
         </div>
-        <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
 
-          <div>
-            <label className={label}>Investment Type</label>
-            <select className={inp} value={form.type} onChange={e => set('type', e.target.value)}>
-              {PORTFOLIO_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={label}>Name / Description *</label>
-            <input className={inp} value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. HDFC Flexi Cap SIP" />
-          </div>
-
-          <div>
-            <label className={label}>Platform / Bank</label>
-            <select className={inp} value={form.platform} onChange={e => set('platform', e.target.value)}>
-              <option value="">— Select —</option>
-              {PLATFORMS.map(p => <option key={p}>{p}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className={label}>Account / Folio Number</label>
-            <input className={inp} value={form.accountNumber} onChange={e => set('accountNumber', e.target.value)} placeholder="Folio / A/C number" />
+        <div className="modal-body">
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Investment Type</label>
+              <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+                {PORTFOLIO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Name / Scheme *</label>
+              <input
+                className="form-input"
+                value={form.name}
+                onChange={e => set('name', e.target.value)}
+                placeholder="e.g. Parag Parikh Flexi Cap, SBI 5-Yr FD"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className={label}>Amount (₹)</label>
-            <input className={inp} type="number" value={form.amount} onChange={e => set('amount', e.target.value)} placeholder="5000" />
-          </div>
-          <div>
-            <label className={label}>Frequency</label>
-            <select className={inp} value={form.frequency} onChange={e => set('frequency', e.target.value)}>
-              {FREQUENCIES.map(f => <option key={f}>{f}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className={label}>Start Date</label>
-            <input className={inp} type="date" value={form.startDate} onChange={e => set('startDate', e.target.value)} />
-          </div>
-          <div>
-            <label className={label}>Maturity / End Date</label>
-            <input className={inp} type="date" value={form.maturityDate} onChange={e => set('maturityDate', e.target.value)} />
-          </div>
-
-          <div>
-            <label className={label}>Expected Return (% / yr)</label>
-            <input className={inp} type="number" value={form.expectedReturn} onChange={e => set('expectedReturn', e.target.value)} placeholder="12" />
-          </div>
-          <div>
-            <label className={label}>Current Value (₹)</label>
-            <input className={inp} type="number" value={form.currentValue} onChange={e => set('currentValue', e.target.value)} placeholder="Leave blank if unknown" />
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Platform / Bank</label>
+              <select className="form-input" value={form.platform} onChange={e => set('platform', e.target.value)}>
+                <option value="">— Select Platform / Bank —</option>
+                {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Folio / Account Number</label>
+              <input
+                className="form-input"
+                value={form.accountNumber}
+                onChange={e => set('accountNumber', e.target.value)}
+                placeholder="A/C or Folio number"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className={label}>Status</label>
-            <select className={inp} value={form.status} onChange={e => set('status', e.target.value)}>
-              <option>Active</option><option>Matured</option><option>Withdrawn</option><option>Paused</option>
-            </select>
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Investment Amount (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.amount}
+                onChange={e => set('amount', e.target.value)}
+                placeholder="e.g. 10000"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Frequency</label>
+              <select className="form-input" value={form.frequency} onChange={e => set('frequency', e.target.value)}>
+                {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
           </div>
 
-          <div style={{ gridColumn: '1/-1' }}>
-            <label className={label}>Notes</label>
-            <textarea className={inp} value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} placeholder="Any details..." style={{ resize: 'vertical' }} />
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Start Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.startDate}
+                onChange={e => set('startDate', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Maturity / End Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.maturityDate}
+                onChange={e => set('maturityDate', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="form-input" value={form.status} onChange={e => set('status', e.target.value)}>
+                <option>Active</option><option>Matured</option><option>Withdrawn</option><option>Paused</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Expected Return (% / yr)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.expectedReturn}
+                onChange={e => set('expectedReturn', e.target.value)}
+                placeholder="e.g. 12"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Current / Valuation Amount (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.currentValue}
+                onChange={e => set('currentValue', e.target.value)}
+                placeholder="Leave blank if same as investment"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Notes</label>
+            <textarea
+              className="form-input"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="Additional details..."
+              style={{ minHeight: 60 }}
+            />
           </div>
         </div>
 
         <div className="modal-footer">
-          <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" onClick={handleSave}><Check size={15} /> Save</button>
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={!form.name?.trim() && !form.type}>
+            <Check size={14} /> Save Investment
+          </button>
         </div>
       </div>
     </div>
@@ -316,97 +453,130 @@ function PolicyCard({ policy, onEdit, onDelete, onTogglePayment }) {
   const [expanded, setExpanded] = useState(false);
   const months12 = getLast12Months();
   const days = policy.nextDueDate ? daysUntil(policy.nextDueDate) : null;
-  const color = badgeColor(policy.status);
+  const statusBadge = getStatusBadgeClass(policy.status);
 
   return (
-    <div className="card" style={{ marginBottom: 12 }}>
+    <div className="vehicle-card" style={{ marginBottom: 12 }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }} onClick={() => setExpanded(e => !e)}>
+      <div className="vehicle-card-header" onClick={() => setExpanded(e => !e)}>
+        <div className="vehicle-icon" style={{ background: 'rgba(99,102,241,0.15)' }}>
+          <Shield size={22} color="var(--accent-indigo)" />
+        </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 15 }}>{policy.policyName || 'Unnamed Policy'}</span>
-            <span style={{ background: `${color}22`, color, border: `1px solid ${color}44`, borderRadius: 20, padding: '1px 10px', fontSize: 11, fontWeight: 600 }}>
-              {policy.status}
-            </span>
-            {policy.type && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{policy.type}</span>}
+            <span className={`badge ${statusBadge}`}>{policy.status}</span>
+            {policy.type && <span className="badge badge-muted">{policy.type}</span>}
           </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 6, flexWrap: 'wrap' }}>
-            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-              <User size={12} style={{ verticalAlign: 'middle' }} /> {policy.holderName || '—'}
-            </span>
-            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-              🏢 {policy.insurer}
-            </span>
+
+          <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
+            <span>🏢 <strong>{policy.insurer}</strong></span>
+            {policy.holderName && <span>👤 Holder: <strong>{policy.holderName}</strong></span>}
             {policy.premiumAmount && (
-              <span style={{ color: 'var(--accent)', fontSize: 13, fontWeight: 600 }}>
+              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
                 {formatCurrency(policy.premiumAmount)} / {policy.premiumFrequency}
               </span>
             )}
-            {days !== null && (
-              <span style={{ fontSize: 12, fontWeight: 700 }} className={daysColor(days)}>
-                <Clock size={11} style={{ verticalAlign: 'middle' }} /> {daysLabel(days)}
+            {policy.sumAssured && (
+              <span>SA: {formatCurrency(policy.sumAssured)}</span>
+            )}
+            {days !== null && days <= 30 && (
+              <span style={{ color: days <= 7 ? 'var(--accent-red)' : 'var(--accent-amber)', fontWeight: 600 }}>
+                ⏳ Due in {days} day{days !== 1 ? 's' : ''}
               </span>
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button className="icon-btn" onClick={e => { e.stopPropagation(); onEdit(policy); }} title="Edit"><Edit2 size={14} /></button>
-          <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(policy.id); }} title="Delete"><Trash2 size={14} /></button>
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+
+        <div className="flex items-center gap-8" onClick={e => e.stopPropagation()}>
+          <button
+            className="btn btn-secondary btn-icon btn-sm"
+            onClick={() => onEdit(policy)}
+            title="Edit Policy"
+          >
+            <Edit2 size={13} />
+          </button>
+          <button
+            className="btn btn-danger btn-icon btn-sm"
+            onClick={() => onDelete(policy.id)}
+            title="Delete Policy"
+          >
+            <Trash2 size={13} />
+          </button>
+          <div onClick={() => setExpanded(e => !e)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            {expanded ? <ChevronUp size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
+          </div>
         </div>
       </div>
 
       {/* Expanded details */}
       {expanded && (
-        <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-            {policy.policyNumber && <InfoRow icon={<FileText size={12} />} label="Policy #" value={policy.policyNumber} />}
-            {policy.nominee && <InfoRow icon={<User size={12} />} label="Nominee" value={policy.nominee} />}
-            {policy.sumAssured && <InfoRow icon={<Shield size={12} />} label="Sum Assured" value={formatCurrency(policy.sumAssured)} />}
-            {policy.maturityAmount && <InfoRow icon={<TrendingUp size={12} />} label="Maturity Amt" value={formatCurrency(policy.maturityAmount)} />}
-            {policy.startDate && <InfoRow label="Start" value={formatDate(policy.startDate)} />}
-            {policy.maturityDate && <InfoRow label="Maturity" value={formatDate(policy.maturityDate)} />}
-            {policy.paymentEndDate && <InfoRow label="Pay Till" value={formatDate(policy.paymentEndDate)} />}
-            {policy.nextDueDate && <InfoRow label="Next Due" value={formatDate(policy.nextDueDate)} highlight />}
-            {policy.otpPhone && <InfoRow icon={<Phone size={12} />} label="OTP Phone" value={policy.otpPhone} />}
-            {policy.agentName && <InfoRow icon={<User size={12} />} label="Agent" value={`${policy.agentName}${policy.agentPhone ? ` (${policy.agentPhone})` : ''}`} />}
+        <div className="vehicle-card-body">
+          <div className="grid-cols-3 gap-12 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+            <div>
+              <div className="text-sm text-muted">Policy Number</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{policy.policyNumber || '—'}</div>
+              <div className="text-sm text-secondary">Nominee: {policy.nominee || '—'}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Maturity Expectation</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent-cyan)' }}>
+                {policy.maturityAmount ? formatCurrency(policy.maturityAmount) : '—'}
+              </div>
+              <div className="text-sm text-secondary">Maturity: {policy.maturityDate ? formatDate(policy.maturityDate) : '—'}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Pay-Till & Next Due</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--accent-amber)' }}>
+                Next: {policy.nextDueDate ? formatDate(policy.nextDueDate) : '—'}
+              </div>
+              <div className="text-sm text-secondary">Pay till: {policy.paymentEndDate ? formatDate(policy.paymentEndDate) : '—'}</div>
+            </div>
           </div>
 
-          {policy.notes && (
-            <div style={{ background: 'var(--bg-dark)', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-              📝 {policy.notes}
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 14, fontSize: 13, color: 'var(--text-secondary)' }}>
+            {policy.otpPhone && (
+              <div>📱 <strong>OTP Phone:</strong> <span style={{ color: 'var(--text-primary)' }}>{policy.otpPhone}</span></div>
+            )}
+            {policy.agentName && (
+              <div>🤝 <strong>Agent:</strong> <span style={{ color: 'var(--text-primary)' }}>{policy.agentName}</span></div>
+            )}
+            {policy.notes && (
+              <div style={{ width: '100%', color: 'var(--text-muted)', fontStyle: 'italic' }}>📝 {policy.notes}</div>
+            )}
+          </div>
 
-          {/* Payment history grid (last 12 months) */}
-          {policy.premiumFrequency && policy.premiumFrequency !== 'One-Time' && (
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>PREMIUM PAYMENT HISTORY</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {months12.map(month => {
-                  const ph = policy.paymentHistory?.[month];
-                  const isPaid = ph?.status === 'Paid';
-                  const isMissed = ph?.status === 'Missed';
-                  return (
-                    <button
-                      key={month}
-                      title={monthLabel(month)}
-                      onClick={() => onTogglePayment(policy.id, month)}
-                      style={{
-                        padding: '4px 10px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                        fontSize: 11, fontWeight: 600,
-                        background: isPaid ? '#10b98122' : isMissed ? '#ef444422' : 'var(--bg-dark)',
-                        color: isPaid ? '#10b981' : isMissed ? '#ef4444' : 'var(--text-muted)',
-                        outline: isPaid ? '1px solid #10b98144' : isMissed ? '1px solid #ef444444' : '1px solid var(--border)',
-                      }}
-                    >
-                      {month.slice(5)} {isPaid ? '✓' : isMissed ? '✗' : ''}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* 12-Month Payment History */}
+          <div>
+            <div className="flex justify-between items-center mb-8">
+              <span className="text-sm text-secondary">Premium Payment Tracker (Click to mark Paid / Unpaid)</span>
+              <span className="text-sm text-muted">Current: {monthLabel(currentMonthKey())}</span>
             </div>
-          )}
+
+            <div className="month-grid">
+              {months12.map(month => {
+                const ph = policy.paymentHistory?.[month];
+                const isPaid = ph?.status === 'Paid';
+                const isMissed = ph?.status === 'Missed';
+                const cls = isPaid ? 'month-cell-paid' : isMissed ? 'month-cell-unpaid' : 'month-cell-none';
+
+                return (
+                  <div
+                    key={month}
+                    className={`month-cell ${cls}`}
+                    onClick={() => onTogglePayment(policy.id, month)}
+                    title={monthLabel(month)}
+                  >
+                    <div>{monthLabel(month).split(' ')[0].substring(0, 3)}</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>{monthLabel(month).split(' ')[1]}</div>
+                    {isPaid && <Check size={10} style={{ marginTop: 2, display: 'inline' }} />}
+                    {isMissed && <span style={{ fontSize: 10, marginTop: 2, display: 'inline', color: 'var(--accent-red)' }}>✕</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -418,62 +588,216 @@ function PortfolioCard({ item, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const days = item.maturityDate ? daysUntil(item.maturityDate) : null;
 
-  const typeColors = {
-    SIP: '#6366f1', FD: '#f59e0b', RD: '#14b8a6', 'Mutual Fund': '#8b5cf6',
-    PPF: '#10b981', NPS: '#3b82f6', Stocks: '#ef4444', Gold: '#f59e0b',
-    SWP: '#06b6d4', Bonds: '#84cc16', ETF: '#a78bfa', Other: '#6b7280',
-  };
-  const color = typeColors[item.type] || '#6b7280';
-
   return (
-    <div className="card" style={{ marginBottom: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer' }} onClick={() => setExpanded(e => !e)}>
-        <div style={{
-          width: 42, height: 42, borderRadius: 10, background: `${color}22`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 11, fontWeight: 800, color, flexShrink: 0,
-        }}>
-          {item.type?.slice(0, 3).toUpperCase()}
+    <div className="vehicle-card" style={{ marginBottom: 10 }}>
+      <div className="vehicle-card-header" onClick={() => setExpanded(e => !e)}>
+        <div className="vehicle-icon" style={{ background: 'rgba(6,182,212,0.15)' }}>
+          <Briefcase size={22} color="var(--accent-cyan)" />
         </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}>{item.name || item.type}</div>
-          <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-            {item.platform && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>📱 {item.platform}</span>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>{item.name || item.type}</span>
+            <span className="badge badge-purple">{item.type}</span>
+            <span className="badge badge-green">{item.status}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
+            {item.platform && <span>📱 <strong>{item.platform}</strong></span>}
             {item.amount && (
-              <span style={{ color, fontSize: 13, fontWeight: 600 }}>
+              <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>
                 {formatCurrency(item.amount)}{item.frequency && item.frequency !== 'One-Time' ? ` / ${item.frequency}` : ''}
               </span>
             )}
             {item.currentValue && (
-              <span style={{ color: '#10b981', fontSize: 12 }}>
-                Current: {formatCurrency(item.currentValue)}
+              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
+                Valuation: {formatCurrency(item.currentValue)}
               </span>
             )}
             {days !== null && days <= 90 && (
-              <span style={{ fontSize: 12, fontWeight: 700 }} className={daysColor(days)}>
-                <Clock size={11} style={{ verticalAlign: 'middle' }} /> Matures {daysLabel(days)}
+              <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>
+                ⏳ Matures in {days}d
               </span>
             )}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ background: `${color}22`, color, borderRadius: 20, padding: '2px 10px', fontSize: 11, fontWeight: 600 }}>
-            {item.status}
-          </span>
-          <button className="icon-btn" onClick={e => { e.stopPropagation(); onEdit(item); }} title="Edit"><Edit2 size={14} /></button>
-          <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(item.id); }} title="Delete"><Trash2 size={14} /></button>
-          {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+
+        <div className="flex items-center gap-8" onClick={e => e.stopPropagation()}>
+          <button
+            className="btn btn-secondary btn-icon btn-sm"
+            onClick={() => onEdit(item)}
+            title="Edit Item"
+          >
+            <Edit2 size={13} />
+          </button>
+          <button
+            className="btn btn-danger btn-icon btn-sm"
+            onClick={() => onDelete(item.id)}
+            title="Delete Item"
+          >
+            <Trash2 size={13} />
+          </button>
+          <div onClick={() => setExpanded(e => !e)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            {expanded ? <ChevronUp size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
+          </div>
         </div>
       </div>
 
       {expanded && (
-        <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-            {item.accountNumber && <InfoRow label="Account/Folio" value={item.accountNumber} />}
-            {item.startDate && <InfoRow label="Start" value={formatDate(item.startDate)} />}
-            {item.maturityDate && <InfoRow label="Maturity" value={formatDate(item.maturityDate)} highlight />}
-            {item.expectedReturn && <InfoRow label="Expected Return" value={`${item.expectedReturn}% / yr`} />}
-            {item.notes && <div style={{ gridColumn: '1/-1', color: 'var(--text-muted)', fontSize: 13 }}>📝 {item.notes}</div>}
+        <div className="vehicle-card-body">
+          <div className="grid-cols-3 gap-12" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+            <div>
+              <div className="text-sm text-muted">Account / Folio</div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{item.accountNumber || '—'}</div>
+              <div className="text-sm text-secondary">Started: {item.startDate ? formatDate(item.startDate) : '—'}</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Maturity Date</div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{item.maturityDate ? formatDate(item.maturityDate) : '—'}</div>
+              <div className="text-sm text-secondary">
+                {days !== null ? (days >= 0 ? `${days} days left` : 'Matured') : 'No maturity date'}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Expected Annual Return</div>
+              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--accent-green)' }}>
+                {item.expectedReturn ? `${item.expectedReturn}% / yr` : '—'}
+              </div>
+            </div>
+          </div>
+          {item.notes && (
+            <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+              📝 {item.notes}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── SWP Panel ────────────────────────────────────────────────────────────────
+function SwpPanel({ investments, updateInvestments }) {
+  const swp = investments?.swp || {};
+  const months12 = getLast12Months();
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    corpus: swp.corpus || '',
+    monthlyWithdrawal: swp.monthlyWithdrawal || '',
+    startDate: swp.startDate || ''
+  });
+
+  const saveSwp = () => {
+    updateInvestments({
+      ...investments,
+      swp: {
+        ...swp,
+        corpus: Number(form.corpus),
+        monthlyWithdrawal: Number(form.monthlyWithdrawal),
+        startDate: form.startDate
+      }
+    });
+    setEditing(false);
+  };
+
+  const togglePayout = (month) => {
+    const current = swp.payouts?.[month];
+    const next = current?.status === 'Received'
+      ? { status: 'Pending', amount: '', date: '' }
+      : { status: 'Received', amount: swp.monthlyWithdrawal, date: new Date().toISOString().split('T')[0] };
+    updateInvestments({
+      ...investments,
+      swp: { ...swp, payouts: { ...(swp.payouts || {}), [month]: next } }
+    });
+  };
+
+  const totalReceived = months12.reduce((s, m) => {
+    const p = swp.payouts?.[m];
+    return s + (p?.status === 'Received' ? Number(p.amount || swp.monthlyWithdrawal || 0) : 0);
+  }, 0);
+
+  return (
+    <div className="card mb-20" style={{ border: '1px solid rgba(6,182,212,0.25)', background: 'linear-gradient(180deg, rgba(6,182,212,0.04) 0%, var(--bg-card) 100%)' }}>
+      <div className="section-header" style={{ marginBottom: 14 }}>
+        <div>
+          <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrendingUp size={18} color="var(--accent-cyan)" /> Systematic Withdrawal Plan (SWP)
+          </div>
+          <div className="section-subtitle">
+            {swp.corpus > 0
+              ? `Corpus: ${formatCurrency(swp.corpus)} · Monthly: ${formatCurrency(swp.monthlyWithdrawal)} · Received (12m): ${formatCurrency(totalReceived)}`
+              : 'Configure your mutual fund SWP corpus and monthly withdrawal'}
+          </div>
+        </div>
+        <button className="btn btn-secondary btn-sm" onClick={() => setEditing(e => !e)}>
+          <Edit2 size={13} /> {editing ? 'Cancel' : 'Edit SWP Setup'}
+        </button>
+      </div>
+
+      {editing && (
+        <div style={{ background: 'var(--bg-base)', padding: 16, borderRadius: 'var(--radius-md)', marginBottom: 16, border: '1px solid var(--border-subtle)' }}>
+          <div className="form-row form-row-3 mb-12">
+            <div className="form-group">
+              <label className="form-label">Total SWP Corpus (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.corpus}
+                onChange={e => setForm(f => ({ ...f, corpus: e.target.value }))}
+                placeholder="e.g. 5000000"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Monthly Withdrawal (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.monthlyWithdrawal}
+                onChange={e => setForm(f => ({ ...f, monthlyWithdrawal: e.target.value }))}
+                placeholder="e.g. 35000"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Start Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.startDate}
+                onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button className="btn btn-primary btn-sm" onClick={saveSwp}>
+              <Check size={14} /> Save SWP Configuration
+            </button>
+          </div>
+        </div>
+      )}
+
+      {swp.monthlyWithdrawal > 0 && (
+        <div>
+          <div className="flex justify-between items-center mb-8">
+            <span className="text-sm text-secondary">Monthly Withdrawal Tracker (Click to mark Received)</span>
+            <span className="text-sm text-muted">Current: {monthLabel(currentMonthKey())}</span>
+          </div>
+
+          <div className="month-grid">
+            {months12.map(month => {
+              const p = swp.payouts?.[month];
+              const got = p?.status === 'Received';
+              return (
+                <div
+                  key={month}
+                  className={`month-cell ${got ? 'month-cell-paid' : 'month-cell-none'}`}
+                  onClick={() => togglePayout(month)}
+                  title={monthLabel(month)}
+                >
+                  <div>{monthLabel(month).split(' ')[0].substring(0, 3)}</div>
+                  <div style={{ fontSize: 10, opacity: 0.7 }}>{monthLabel(month).split(' ')[1]}</div>
+                  {got && <Check size={10} style={{ marginTop: 2, display: 'inline' }} />}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -481,40 +805,28 @@ function PortfolioCard({ item, onEdit, onDelete }) {
   );
 }
 
-// ─── Info Row helper ──────────────────────────────────────────────────────────
-function InfoRow({ icon, label, value, highlight }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>
-        {icon && <span style={{ verticalAlign: 'middle', marginRight: 3 }}>{icon}</span>}
-        {label}
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: highlight ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
-    </div>
-  );
-}
-
-// ─── Payment Calendar ─────────────────────────────────────────────────────────
+// ─── Payment Calendar View ────────────────────────────────────────────────────
 function PaymentCalendar({ investments }) {
   const policies = investments?.policies || [];
   const portfolio = investments?.portfolio || [];
   const [horizon, setHorizon] = useState(90);
 
   const events = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const list = [];
 
     // Policy premiums
     policies.forEach(p => {
-      if (p.status !== 'Active') return;
-      const due = p.nextDueDate;
-      if (!due) return;
-      const d = daysUntil(due);
+      if (p.status !== 'Active' || !p.nextDueDate) return;
+      const d = daysUntil(p.nextDueDate);
       if (d !== null && d <= horizon && d >= -30) {
         list.push({
-          type: 'policy', label: p.policyName || p.insurer, sublabel: `${p.holderName || ''} · ${p.premiumFrequency}`,
-          amount: p.premiumAmount, dueDate: due, days: d, insurer: p.insurer, color: '#6366f1',
+          type: 'policy',
+          label: p.policyName || p.insurer,
+          sublabel: `${p.holderName ? `${p.holderName} · ` : ''}${p.insurer} (${p.premiumFrequency})`,
+          amount: p.premiumAmount,
+          dueDate: p.nextDueDate,
+          days: d,
+          color: 'var(--accent-indigo)'
         });
       }
     });
@@ -527,200 +839,110 @@ function PaymentCalendar({ investments }) {
       const d = daysUntil(due);
       if (d !== null && d <= horizon && d >= -30) {
         list.push({
-          type: 'portfolio', label: item.name || item.type, sublabel: `${item.platform || ''} · ${item.frequency}`,
-          amount: item.amount, dueDate: due, days: d, color: '#10b981',
+          type: 'portfolio',
+          label: item.name || item.type,
+          sublabel: `${item.platform ? `${item.platform} · ` : ''}${item.type} (${item.frequency})`,
+          amount: item.amount,
+          dueDate: due,
+          days: d,
+          color: 'var(--accent-blue)'
         });
       }
     });
 
-    // SWP payout
-    const swp = investments?.swp;
-    if (swp?.monthlyWithdrawal) {
-      const thisMonth = currentMonthKey();
-      const payout = swp.payouts?.[thisMonth];
-      if (!payout || payout.status !== 'Received') {
-        list.push({
-          type: 'swp', label: 'SWP Payout Expected', sublabel: 'Monthly withdrawal',
-          amount: swp.monthlyWithdrawal, dueDate: null, days: 0, color: '#06b6d4', incoming: true,
-        });
-      }
-    }
+    return list.sort((a, b) => a.days - b.days);
+  }, [policies, portfolio, horizon]);
 
-    return list.sort((a, b) => {
-      if (a.days === null) return 1;
-      if (b.days === null) return -1;
-      return a.days - b.days;
-    });
-  }, [policies, portfolio, investments, horizon]);
-
-  const totalOutgoing = events.filter(e => !e.incoming).reduce((s, e) => s + Number(e.amount || 0), 0);
-  const overdueItems = events.filter(e => e.days < 0);
-  const dueItems = events.filter(e => e.days >= 0 && e.days <= 7);
+  const totalUpcoming = events.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  const overdueCount = events.filter(e => e.days < 0).length;
+  const dueSoonCount = events.filter(e => e.days >= 0 && e.days <= 7).length;
 
   return (
     <div>
-      {/* Summary row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 20 }}>
-        <div className="stat-card" style={{ background: overdueItems.length ? '#ef444411' : undefined }}>
-          <div className="stat-label">Overdue</div>
-          <div className="stat-value" style={{ color: overdueItems.length ? '#ef4444' : 'var(--text-muted)' }}>{overdueItems.length}</div>
+      {/* Overview Cards */}
+      <div className="grid-cols-3 gap-12 mb-20">
+        <div className="stat-card" style={{ background: overdueCount > 0 ? 'rgba(239,68,68,0.08)' : undefined }}>
+          <div className="stat-label">Overdue Premiums</div>
+          <div className="stat-value" style={{ color: overdueCount > 0 ? 'var(--accent-red)' : 'var(--text-muted)' }}>
+            {overdueCount}
+          </div>
+          <div className="stat-sub">Past due date</div>
         </div>
-        <div className="stat-card" style={{ background: dueItems.length ? '#f59e0b11' : undefined }}>
+
+        <div className="stat-card" style={{ background: dueSoonCount > 0 ? 'rgba(245,158,11,0.08)' : undefined }}>
           <div className="stat-label">Due This Week</div>
-          <div className="stat-value" style={{ color: dueItems.length ? '#f59e0b' : 'var(--text-muted)' }}>{dueItems.length}</div>
+          <div className="stat-value" style={{ color: dueSoonCount > 0 ? 'var(--accent-amber)' : 'var(--text-muted)' }}>
+            {dueSoonCount}
+          </div>
+          <div className="stat-sub">Next 7 days</div>
         </div>
+
         <div className="stat-card">
-          <div className="stat-label">Upcoming Total</div>
-          <div className="stat-value">{formatCurrency(totalOutgoing)}</div>
+          <div className="stat-label">Upcoming Commitments ({horizon}d)</div>
+          <div className="stat-value" style={{ color: 'var(--accent-cyan)' }}>
+            {formatCurrency(totalUpcoming)}
+          </div>
+          <div className="stat-sub">Across {events.length} upcoming debits</div>
         </div>
       </div>
 
-      {/* Horizon filter */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Show:</span>
+      {/* Horizon selector */}
+      <div className="flex items-center gap-8 mb-16">
+        <span className="text-sm text-secondary">Timeline:</span>
         {[30, 60, 90, 180].map(h => (
-          <button key={h} onClick={() => setHorizon(h)}
-            style={{
-              padding: '4px 14px', borderRadius: 20, border: '1px solid var(--border)',
-              background: horizon === h ? 'var(--accent)' : 'transparent',
-              color: horizon === h ? '#fff' : 'var(--text-muted)', cursor: 'pointer', fontSize: 13,
-            }}>
-            {h}d
+          <button
+            key={h}
+            className={`btn btn-sm ${horizon === h ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setHorizon(h)}
+          >
+            {h} Days
           </button>
         ))}
       </div>
 
-      {events.length === 0 && (
-        <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 0', fontSize: 14 }}>
-          <Calendar size={32} style={{ opacity: 0.3, marginBottom: 8, display: 'block', margin: '0 auto 8px' }} />
-          No upcoming payments in the next {horizon} days
+      {events.length === 0 ? (
+        <div className="empty-state">
+          <Calendar size={48} />
+          <div className="empty-state-title">No payments due</div>
+          <div className="empty-state-desc">No insurance premiums or SIP debits found in the next {horizon} days.</div>
         </div>
-      )}
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {events.map((ev, i) => (
+            <div
+              key={i}
+              className="card"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '14px 18px',
+                borderLeft: `4px solid ${ev.days < 0 ? 'var(--accent-red)' : ev.days <= 7 ? 'var(--accent-amber)' : 'var(--accent-blue)'}`
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 15 }}>{ev.label}</div>
+                <div className="text-sm text-muted">{ev.sublabel}</div>
+              </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {events.map((ev, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: 14,
-            background: ev.days < 0 ? '#ef444409' : ev.days <= 7 ? '#f59e0b09' : 'var(--bg-card)',
-            border: `1px solid ${ev.days < 0 ? '#ef444433' : ev.days <= 7 ? '#f59e0b33' : 'var(--border)'}`,
-            borderRadius: 10, padding: '12px 16px',
-          }}>
-            <div style={{
-              width: 10, height: 10, borderRadius: '50%',
-              background: ev.days < 0 ? '#ef4444' : ev.days <= 7 ? '#f59e0b' : ev.color,
-              flexShrink: 0,
-            }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{ev.label}</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: 12 }}>{ev.sublabel}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              {ev.amount && (
-                <div style={{ fontWeight: 700, color: ev.incoming ? '#10b981' : 'var(--text-primary)' }}>
-                  {ev.incoming ? '+' : ''}{formatCurrency(ev.amount)}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>
+                  {formatCurrency(ev.amount)}
                 </div>
-              )}
-              <div style={{ fontSize: 12, fontWeight: 600 }} className={daysColor(ev.days)}>
-                {ev.dueDate ? formatDate(ev.dueDate) : 'This month'}
-                {ev.days !== null && <span style={{ marginLeft: 6 }}>({daysLabel(ev.days)})</span>}
+                <div style={{
+                  fontSize: 12, fontWeight: 600,
+                  color: ev.days < 0 ? 'var(--accent-red)' : ev.days <= 7 ? 'var(--accent-amber)' : 'var(--accent-green)'
+                }}>
+                  {formatDate(ev.dueDate)} ({ev.days < 0 ? `${Math.abs(ev.days)}d overdue` : ev.days === 0 ? 'Due Today' : `${ev.days}d left`})
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── SWP Tab (embedded inside Portfolio) ─────────────────────────────────────
-function SwpPanel({ investments, updateInvestments }) {
-  const swp = investments?.swp || {};
-  const months12 = getLast12Months();
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ corpus: swp.corpus || '', monthlyWithdrawal: swp.monthlyWithdrawal || '', startDate: swp.startDate || '' });
-
-  const saveSwp = () => {
-    updateInvestments({ ...investments, swp: { ...swp, corpus: Number(form.corpus), monthlyWithdrawal: Number(form.monthlyWithdrawal), startDate: form.startDate } });
-    setEditing(false);
-  };
-
-  const togglePayout = (month) => {
-    const current = swp.payouts?.[month];
-    const next = current?.status === 'Received'
-      ? { status: 'Pending', amount: '', date: '' }
-      : { status: 'Received', amount: swp.monthlyWithdrawal, date: new Date().toISOString().split('T')[0] };
-    updateInvestments({ ...investments, swp: { ...swp, payouts: { ...(swp.payouts || {}), [month]: next } } });
-  };
-
-  const totalReceived = months12.reduce((s, m) => {
-    const p = swp.payouts?.[m];
-    return s + (p?.status === 'Received' ? Number(p.amount || swp.monthlyWithdrawal || 0) : 0);
-  }, 0);
-
-  return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>SWP — Systematic Withdrawal Plan</div>
-          {swp.corpus > 0 && (
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
-              Corpus: {formatCurrency(swp.corpus)} · Monthly: {formatCurrency(swp.monthlyWithdrawal)} · Received: {formatCurrency(totalReceived)}
-            </div>
-          )}
-        </div>
-        <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setEditing(e => !e)}>
-          <Edit2 size={13} /> {editing ? 'Cancel' : 'Edit Setup'}
-        </button>
-      </div>
-
-      {editing && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16, padding: 14, background: 'var(--bg-dark)', borderRadius: 10 }}>
-          <div>
-            <label className="modal-label">Corpus (₹)</label>
-            <input className="modal-input" type="number" value={form.corpus} onChange={e => setForm(f => ({ ...f, corpus: e.target.value }))} />
-          </div>
-          <div>
-            <label className="modal-label">Monthly Withdrawal (₹)</label>
-            <input className="modal-input" type="number" value={form.monthlyWithdrawal} onChange={e => setForm(f => ({ ...f, monthlyWithdrawal: e.target.value }))} />
-          </div>
-          <div>
-            <label className="modal-label">Start Date</label>
-            <input className="modal-input" type="date" value={form.startDate} onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
-          </div>
-          <div style={{ gridColumn: '1/-1', display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-primary" onClick={saveSwp}><Check size={14} /> Save SWP</button>
-          </div>
-        </div>
-      )}
-
-      {swp.monthlyWithdrawal > 0 && (
-        <div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>PAYOUT HISTORY (last 12 months)</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {months12.map(month => {
-              const p = swp.payouts?.[month];
-              const got = p?.status === 'Received';
-              return (
-                <button key={month} onClick={() => togglePayout(month)} title={monthLabel(month)}
-                  style={{
-                    padding: '5px 12px', borderRadius: 20, border: 'none', cursor: 'pointer',
-                    background: got ? '#10b98122' : 'var(--bg-dark)',
-                    color: got ? '#10b981' : 'var(--text-muted)',
-                    outline: got ? '1px solid #10b98144' : '1px solid var(--border)',
-                    fontSize: 11, fontWeight: 600,
-                  }}>
-                  {month.slice(5)} {got ? '✓' : ''}
-                </button>
-              );
-            })}
-          </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main Investments Component ───────────────────────────────────────────────
 export default function Investments({ investments, updateInvestments }) {
   const [tab, setTab] = useState('policies');
   const [showPolicyModal, setShowPolicyModal] = useState(false);
@@ -734,7 +956,7 @@ export default function Investments({ investments, updateInvestments }) {
   const policies = investments?.policies || [];
   const portfolio = investments?.portfolio || [];
 
-  // ── Policy actions ──
+  // Policy CRUD
   const savePolicy = (pol) => {
     const existing = policies.findIndex(p => p.id === pol.id);
     const updated = existing >= 0
@@ -746,7 +968,7 @@ export default function Investments({ investments, updateInvestments }) {
   };
 
   const deletePolicy = (id) => {
-    if (!window.confirm('Delete this policy?')) return;
+    if (!window.confirm('Delete this insurance policy?')) return;
     updateInvestments({ ...investments, policies: policies.filter(p => p.id !== id) });
   };
 
@@ -762,7 +984,7 @@ export default function Investments({ investments, updateInvestments }) {
     updateInvestments({ ...investments, policies: updated });
   };
 
-  // ── Portfolio actions ──
+  // Portfolio CRUD
   const savePortfolioItem = (item) => {
     const existing = portfolio.findIndex(p => p.id === item.id);
     const updated = existing >= 0
@@ -778,10 +1000,14 @@ export default function Investments({ investments, updateInvestments }) {
     updateInvestments({ ...investments, portfolio: portfolio.filter(p => p.id !== id) });
   };
 
-  // ── Filtered lists ──
+  // Filtered lists
   const filteredPolicies = policies.filter(p => {
     const q = search.toLowerCase();
-    const matchSearch = !q || p.policyName?.toLowerCase().includes(q) || p.policyNumber?.includes(q) || p.holderName?.toLowerCase().includes(q) || p.insurer?.toLowerCase().includes(q);
+    const matchSearch = !q
+      || p.policyName?.toLowerCase().includes(q)
+      || p.policyNumber?.includes(q)
+      || p.holderName?.toLowerCase().includes(q)
+      || p.insurer?.toLowerCase().includes(q);
     const matchInsurer = !filterInsurer || p.insurer === filterInsurer;
     const matchStatus = !filterStatus || p.status === filterStatus;
     return matchSearch && matchInsurer && matchStatus;
@@ -789,151 +1015,201 @@ export default function Investments({ investments, updateInvestments }) {
 
   const filteredPortfolio = portfolio.filter(p => {
     const q = search.toLowerCase();
-    return !q || p.name?.toLowerCase().includes(q) || p.type?.toLowerCase().includes(q) || p.platform?.toLowerCase().includes(q);
+    return !q
+      || p.name?.toLowerCase().includes(q)
+      || p.type?.toLowerCase().includes(q)
+      || p.platform?.toLowerCase().includes(q);
   });
 
-  // ── Stats ──
-  const totalPremiumYearly = policies.filter(p => p.status === 'Active').reduce((s, p) => {
+  // Summary Metrics
+  const activePolicies = policies.filter(p => p.status === 'Active');
+  const totalAnnualPremium = activePolicies.reduce((sum, p) => {
     const freq = getFrequencyMonths(p.premiumFrequency);
-    if (!freq) return s;
-    return s + (Number(p.premiumAmount || 0) * (12 / freq));
+    if (!freq) return sum;
+    return sum + (Number(p.premiumAmount || 0) * (12 / freq));
   }, 0);
-  const totalSumAssured = policies.reduce((s, p) => s + Number(p.sumAssured || 0), 0);
-  const totalPortfolioValue = portfolio.reduce((s, p) => s + Number(p.currentValue || p.amount || 0), 0);
-  const activePolicies = policies.filter(p => p.status === 'Active').length;
+  const totalSumAssured = policies.reduce((sum, p) => sum + Number(p.sumAssured || 0), 0);
+  const totalPortfolioVal = portfolio.reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
   const upcomingAlerts = policies.filter(p => {
     const d = p.nextDueDate ? daysUntil(p.nextDueDate) : null;
     return d !== null && d <= 30;
   }).length;
 
-  const TABS = [
-    { id: 'policies', label: 'Policies', icon: <Shield size={14} />, count: policies.length },
-    { id: 'portfolio', label: 'Portfolio', icon: <Briefcase size={14} />, count: portfolio.length },
-    { id: 'calendar', label: 'Calendar', icon: <Calendar size={14} />, count: upcomingAlerts || null },
-  ];
-
   return (
     <div className="animate-in">
-      {/* Stats Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 20 }}>
+      {/* Top Stats */}
+      <div className="grid-cols-4 mb-20">
         <div className="stat-card">
+          <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.15)' }}>
+            <Shield size={20} color="var(--accent-indigo)" />
+          </div>
           <div className="stat-label">Active Policies</div>
-          <div className="stat-value">{activePolicies}</div>
+          <div className="stat-value">{activePolicies.length}</div>
+          <div className="stat-sub">{policies.length} total policies registered</div>
         </div>
+
         <div className="stat-card">
-          <div className="stat-label">Yearly Premium</div>
-          <div className="stat-value" style={{ fontSize: 18 }}>{formatCurrency(Math.round(totalPremiumYearly))}</div>
+          <div className="stat-icon" style={{ background: 'rgba(239,68,68,0.15)' }}>
+            <IndianRupee size={20} color="var(--accent-red)" />
+          </div>
+          <div className="stat-label">Annual Insurance Outflow</div>
+          <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(Math.round(totalAnnualPremium))}</div>
+          <div className="stat-sub">Combined yearly premium</div>
         </div>
+
         <div className="stat-card">
-          <div className="stat-label">Total Sum Assured</div>
-          <div className="stat-value" style={{ fontSize: 16 }}>{formatCurrency(totalSumAssured)}</div>
+          <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.15)' }}>
+            <Sparkles size={20} color="var(--accent-green)" />
+          </div>
+          <div className="stat-label">Total Life Cover (SA)</div>
+          <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(totalSumAssured)}</div>
+          <div className="stat-sub">Combined sum assured</div>
         </div>
-        <div className="stat-card" style={{ background: upcomingAlerts ? '#f59e0b11' : undefined }}>
-          <div className="stat-label">Due in 30 Days</div>
-          <div className="stat-value" style={{ color: upcomingAlerts ? '#f59e0b' : undefined }}>{upcomingAlerts}</div>
-        </div>
+
         <div className="stat-card">
-          <div className="stat-label">Portfolio Items</div>
-          <div className="stat-value">{portfolio.length}</div>
+          <div className="stat-icon" style={{ background: 'rgba(6,182,212,0.15)' }}>
+            <Briefcase size={20} color="var(--accent-cyan)" />
+          </div>
+          <div className="stat-label">Portfolio Assets</div>
+          <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(totalPortfolioVal)}</div>
+          <div className="stat-sub">{portfolio.length} investments tracked</div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 16px', border: 'none', borderRadius: '8px 8px 0 0',
-              background: tab === t.id ? 'var(--accent)' : 'transparent',
-              color: tab === t.id ? '#fff' : 'var(--text-muted)',
-              cursor: 'pointer', fontWeight: tab === t.id ? 700 : 500, fontSize: 14,
-              borderBottom: tab === t.id ? '2px solid var(--accent)' : '2px solid transparent',
-              marginBottom: -1,
-            }}>
-            {t.icon} {t.label}
-            {t.count !== null && t.count > 0 && (
-              <span style={{ background: tab === t.id ? 'rgba(255,255,255,0.3)' : 'var(--bg-dark)', borderRadius: 20, padding: '0 7px', fontSize: 11, fontWeight: 700 }}>
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Modern Tabs */}
+      <div className="tabs mb-20">
+        <button
+          className={`tab ${tab === 'policies' ? 'active' : ''}`}
+          onClick={() => setTab('policies')}
+        >
+          <Shield size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Insurance Policies ({policies.length})
+        </button>
+        <button
+          className={`tab ${tab === 'portfolio' ? 'active' : ''}`}
+          onClick={() => setTab('portfolio')}
+        >
+          <Briefcase size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Portfolio &amp; SWP ({portfolio.length})
+        </button>
+        <button
+          className={`tab ${tab === 'calendar' ? 'active' : ''}`}
+          onClick={() => setTab('calendar')}
+        >
+          <Calendar size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Payment Calendar
+          {upcomingAlerts > 0 && (
+            <span className="badge badge-amber" style={{ marginLeft: 6, padding: '1px 6px', fontSize: 10 }}>
+              {upcomingAlerts} due
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* ─── Policies Tab ─────────────────────────────────── */}
+      {/* ── Tab 1: Policies ─────────────────────────────────────────── */}
       {tab === 'policies' && (
         <div>
-          {/* Toolbar */}
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          {/* Search & Actions Bar */}
+          <div className="flex gap-10 mb-16 flex-wrap items-center">
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
-                className="modal-input" value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search policies..." style={{ paddingLeft: 32 }}
+                className="form-input"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search policy name, holder, number, or insurer..."
+                style={{ paddingLeft: 36 }}
               />
             </div>
-            <select className="modal-input" style={{ width: 'auto' }} value={filterInsurer} onChange={e => setFilterInsurer(e.target.value)}>
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 140 }}
+              value={filterInsurer}
+              onChange={e => setFilterInsurer(e.target.value)}
+            >
               <option value="">All Insurers</option>
-              {INSURERS.map(i => <option key={i}>{i}</option>)}
+              {INSURERS.map(i => <option key={i} value={i}>{i}</option>)}
             </select>
-            <select className="modal-input" style={{ width: 'auto' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 120 }}
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
               <option value="">All Status</option>
-              {STATUSES.map(s => <option key={s}>{s}</option>)}
+              {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <button className="btn-primary" onClick={() => { setEditingPolicy(null); setShowPolicyModal(true); }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => { setEditingPolicy(null); setShowPolicyModal(true); }}
+            >
               <Plus size={15} /> Add Policy
             </button>
           </div>
 
           {filteredPolicies.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '50px 0' }}>
-              <Shield size={36} style={{ opacity: 0.2, display: 'block', margin: '0 auto 12px' }} />
-              {policies.length === 0 ? 'No policies yet. Add your first insurance policy!' : 'No policies match your filter.'}
+            <div className="empty-state">
+              <Shield size={48} />
+              <div className="empty-state-title">
+                {policies.length === 0 ? 'No insurance policies added yet' : 'No policies match your search'}
+              </div>
+              <div className="empty-state-desc">
+                {policies.length === 0
+                  ? 'Click "Add Policy" to start tracking LIC, Aditya Birla, HDFC Life, and more.'
+                  : 'Try clearing your search query or filter dropdowns.'}
+              </div>
             </div>
           )}
 
-          {filteredPolicies.map(policy => (
-            <PolicyCard
-              key={policy.id}
-              policy={policy}
-              onEdit={(p) => { setEditingPolicy(p); setShowPolicyModal(true); }}
-              onDelete={deletePolicy}
-              onTogglePayment={togglePolicyPayment}
-            />
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {filteredPolicies.map(policy => (
+              <PolicyCard
+                key={policy.id}
+                policy={policy}
+                onEdit={(p) => { setEditingPolicy(p); setShowPolicyModal(true); }}
+                onDelete={deletePolicy}
+                onTogglePayment={togglePolicyPayment}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ─── Portfolio Tab ────────────────────────────────── */}
+      {/* ── Tab 2: Portfolio & SWP ───────────────────────────────────── */}
       {tab === 'portfolio' && (
         <div>
           <SwpPanel investments={investments} updateInvestments={updateInvestments} />
 
-          <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
-              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <div className="flex gap-10 mb-16 flex-wrap items-center">
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
-                className="modal-input" value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search portfolio..." style={{ paddingLeft: 32 }}
+                className="form-input"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search SIPs, Mutual Funds, FDs, Stocks..."
+                style={{ paddingLeft: 36 }}
               />
             </div>
-            <button className="btn-primary" onClick={() => { setEditingPortfolio(null); setShowPortfolioModal(true); }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => { setEditingPortfolio(null); setShowPortfolioModal(true); }}
+            >
               <Plus size={15} /> Add Investment
             </button>
           </div>
 
-          {/* Portfolio stats */}
+          {/* Breakdown summary */}
           {portfolio.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
               {PORTFOLIO_TYPES.filter(t => portfolio.some(p => p.type === t)).map(type => {
                 const items = portfolio.filter(p => p.type === type);
                 const total = items.reduce((s, p) => s + Number(p.currentValue || p.amount || 0), 0);
                 return (
-                  <div key={type} className="stat-card" style={{ padding: '10px 12px' }}>
+                  <div key={type} className="stat-card" style={{ padding: '12px 14px' }}>
                     <div className="stat-label">{type}</div>
-                    <div style={{ fontSize: 15, fontWeight: 700 }}>{formatCurrency(total)}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{items.length} item{items.length !== 1 ? 's' : ''}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700 }}>{formatCurrency(total)}</div>
+                    <div className="stat-sub">{items.length} holding{items.length !== 1 ? 's' : ''}</div>
                   </div>
                 );
               })}
@@ -941,39 +1217,47 @@ export default function Investments({ investments, updateInvestments }) {
           )}
 
           {filteredPortfolio.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '50px 0' }}>
-              <Briefcase size={36} style={{ opacity: 0.2, display: 'block', margin: '0 auto 12px' }} />
-              {portfolio.length === 0 ? 'No portfolio items yet. Track your SIP, FD, MF, Stocks and more!' : 'No items match your search.'}
+            <div className="empty-state">
+              <Briefcase size={48} />
+              <div className="empty-state-title">
+                {portfolio.length === 0 ? 'No portfolio holdings added yet' : 'No items match your search'}
+              </div>
+              <div className="empty-state-desc">
+                Track your SIPs, Bank FDs, Mutual Funds, PPF, NPS, Stocks and Gold in one place.
+              </div>
             </div>
           )}
 
-          {filteredPortfolio.map(item => (
-            <PortfolioCard
-              key={item.id}
-              item={item}
-              onEdit={(i) => { setEditingPortfolio(i); setShowPortfolioModal(true); }}
-              onDelete={deletePortfolioItem}
-            />
-          ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filteredPortfolio.map(item => (
+              <PortfolioCard
+                key={item.id}
+                item={item}
+                onEdit={(i) => { setEditingPortfolio(i); setShowPortfolioModal(true); }}
+                onDelete={deletePortfolioItem}
+              />
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ─── Calendar Tab ─────────────────────────────────── */}
+      {/* ── Tab 3: Calendar ──────────────────────────────────────────── */}
       {tab === 'calendar' && (
         <PaymentCalendar investments={investments} />
       )}
 
-      {/* ─── Modals ───────────────────────────────────────── */}
+      {/* ── Modals ───────────────────────────────────────────────────── */}
       {showPolicyModal && (
         <PolicyModal
-          initial={editingPolicy || undefined}
+          initial={editingPolicy}
           onSave={savePolicy}
           onClose={() => { setShowPolicyModal(false); setEditingPolicy(null); }}
         />
       )}
+
       {showPortfolioModal && (
         <PortfolioModal
-          initial={editingPortfolio || undefined}
+          initial={editingPortfolio}
           onSave={savePortfolioItem}
           onClose={() => { setShowPortfolioModal(false); setEditingPortfolio(null); }}
         />
