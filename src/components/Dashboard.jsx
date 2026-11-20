@@ -12,7 +12,7 @@ import {
 const DOC_LABELS = { insurance: 'Insurance', puc: 'PUC', fitness: 'Fitness', permit: 'Permit' };
 const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐' };
 
-export default function Dashboard({ vehicles, rooms, investments, updateVehicles }) {
+export default function Dashboard({ vehicles, rooms, investments, updateVehicles, finances }) {
   const thisMonth = currentMonthKey();
   const last6Months = useMemo(() => getLast12Months().slice(6), []);
 
@@ -139,7 +139,30 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
   const swpThisMonth = swp?.payouts?.[thisMonth];
   const swpReceivedAmount = swpThisMonth?.status === 'Received' ? Number(swpThisMonth.amount || swp.monthlyWithdrawal || 0) : 0;
 
-  // ── Monthly Outflow Calculations (EMIs + Policies Due + SIPs) ──────────
+  // ── Salary Inflow (Realized this month) ────────────────────────────────
+  const salaryInflow = useMemo(() => {
+    const salary = finances?.salary;
+    if (!salary?.amount) return 0;
+    const r = salary.receipts?.[thisMonth];
+    return r?.status === 'Received' ? Number(r.amount || salary.amount) : 0;
+  }, [finances?.salary, thisMonth]);
+
+  // ── Credit Card Monthly Dues & Total Debt ─────────────────────────────
+  const ccObligations = useMemo(() => {
+    let bills = 0;
+    let emis = 0;
+    let totalOutstanding = 0;
+    (finances?.creditCards || []).forEach(c => {
+      bills += Number(c.monthlyBill || 0);
+      totalOutstanding += Number(c.totalOutstanding || 0);
+      (c.emis || []).forEach(e => {
+        emis += Number(e.emiAmount || 0);
+      });
+    });
+    return { bills, emis, totalDue: bills + emis, totalOutstanding };
+  }, [finances?.creditCards]);
+
+  // ── Monthly Outflow Calculations (EMIs + Policies Due + SIPs + CC) ─────
   const monthlyObligations = useMemo(() => {
     let policyDueTotal = 0;
     const duePolicies = [];
@@ -164,14 +187,15 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       emiTotal: loanStats.totalMonthlyEmi,
       policyDueTotal,
       sipsDueTotal,
-      totalOutflow: loanStats.totalMonthlyEmi + policyDueTotal + sipsDueTotal,
+      ccDueTotal: ccObligations.totalDue,
+      totalOutflow: loanStats.totalMonthlyEmi + policyDueTotal + sipsDueTotal + ccObligations.totalDue,
       duePolicies
     };
-  }, [loanStats.totalMonthlyEmi, investments, thisMonth]);
+  }, [loanStats.totalMonthlyEmi, investments, ccObligations.totalDue, thisMonth]);
 
   // ── Monthly P&L Summary ───────────────────────────────────────────────
   const monthlyPL = useMemo(() => {
-    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount;
+    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount + salaryInflow;
     const totalOutflow = monthlyObligations.totalOutflow;
     const netCashflow = totalInflow - totalOutflow;
     const isSurplus = netCashflow >= 0;
@@ -183,9 +207,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       isSurplus,
       fleetIncome,
       rentCollected: rentStats.collected,
-      swpReceived: swpReceivedAmount
+      swpReceived: swpReceivedAmount,
+      salaryInflow
     };
-  }, [fleetIncome, rentStats.collected, swpReceivedAmount, monthlyObligations.totalOutflow]);
+  }, [fleetIncome, rentStats.collected, swpReceivedAmount, salaryInflow, monthlyObligations.totalOutflow]);
 
   // ── Net Worth Estimator ───────────────────────────────────────────────
   const netWorth = useMemo(() => {
@@ -193,10 +218,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
     const portfolioValue = (investments?.portfolio || []).reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
     const sumAssured = (investments?.policies || []).reduce((sum, p) => sum + Number(p.maturityAmount || p.sumAssured || 0), 0);
     const totalAssets = swpCorpus + portfolioValue + sumAssured;
-    const totalLiabilities = loanStats.totalPending;
+    const totalLiabilities = loanStats.totalPending + ccObligations.totalOutstanding;
     const net = totalAssets - totalLiabilities;
-    return { swpCorpus, portfolioValue, sumAssured, totalAssets, totalLiabilities, net };
-  }, [investments, loanStats.totalPending]);
+    return { swpCorpus, portfolioValue, sumAssured, totalAssets, totalLiabilities, net, ccOutstanding: ccObligations.totalOutstanding };
+  }, [investments, loanStats.totalPending, ccObligations.totalOutstanding]);
 
   // ── 6-Month Income Trend Data ─────────────────────────────────────────
   const trendData = useMemo(() => {
@@ -299,6 +324,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                 Fleet: {formatCurrency(fleetIncome)} · Rent: {formatCurrency(rentStats.collected)}
+                {monthlyPL.salaryInflow > 0 && ` · Salary: ${formatCurrency(monthlyPL.salaryInflow)}`}
               </div>
             </div>
 
@@ -311,6 +337,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                 EMIs: {formatCurrency(monthlyObligations.emiTotal)} · Policies/SIPs: {formatCurrency(monthlyObligations.policyDueTotal + monthlyObligations.sipsDueTotal)}
+                {monthlyObligations.ccDueTotal > 0 && ` · CC: ${formatCurrency(monthlyObligations.ccDueTotal)}`}
               </div>
             </div>
           </div>
@@ -360,7 +387,8 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
                 {formatCurrency(netWorth.totalLiabilities)}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                Across {loanStats.activeLoanCount} vehicle loans
+                Loans: {formatCurrency(loanStats.totalPending)}
+                {netWorth.ccOutstanding > 0 && ` · CC: ${formatCurrency(netWorth.ccOutstanding)}`}
               </div>
             </div>
           </div>

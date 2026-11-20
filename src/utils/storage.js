@@ -9,6 +9,7 @@ const KEYS = {
   SETTINGS: 'assetflow_settings',
   PIN_HASH: 'assetflow_pin_hash',
   FLEET_PIN_HASH: 'assetflow_fleet_pin_hash',
+  FINANCES: 'assetflow_finances',
 };
 
 // Generic get/set for localStorage
@@ -80,6 +81,13 @@ export const saveInvestments = (data) => {
   saveToCloud('investments', data);
 };
 
+// Finances (Salary, Credit Cards, Expenses, Statements)
+export const getFinances = () => mergeFinances(get(KEYS.FINANCES));
+export const saveFinances = (data) => {
+  set(KEYS.FINANCES, data);
+  saveToCloud('finances', data);
+};
+
 // Settings
 export const getSettings = () => get(KEYS.SETTINGS) || { currency: '₹' };
 export const saveSettings = (settings) => {
@@ -148,6 +156,31 @@ export const mergeInvestments = (loaded) => {
     portfolio: loaded.portfolio || [],
     additionalInvestments: loaded.additionalInvestments || [],
     swp: { ...def.swp, ...(loaded.swp || {}) },
+  };
+};
+
+function defaultFinances() {
+  return {
+    salary: {
+      amount: 0,
+      company: '',
+      payDay: 1,
+      history: {},
+    },
+    creditCards: [],
+    expenses: [],
+  };
+}
+
+export const mergeFinances = (loaded) => {
+  const def = defaultFinances();
+  if (!loaded) return def;
+  return {
+    ...def,
+    ...loaded,
+    salary: { ...def.salary, ...(loaded.salary || {}) },
+    creditCards: loaded.creditCards || [],
+    expenses: loaded.expenses || [],
   };
 };
 

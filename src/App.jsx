@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  LayoutDashboard, Truck, Home, TrendingUp, Download,
+  LayoutDashboard, Truck, Home, TrendingUp, CreditCard, Download,
   AlertTriangle, Cloud, CloudOff, Database, X, Check, RefreshCw, Lock, Shield, Plus,
   FileJson, Upload
 } from 'lucide-react';
@@ -8,11 +8,13 @@ import Dashboard from './components/Dashboard';
 import Fleet from './components/Fleet';
 import Rooms from './components/Rooms';
 import Investments from './components/Investments';
+import Finances from './components/Finances';
 import PinLock from './components/PinLock';
 import {
   getVehicles, saveVehicles,
   getRooms, saveRooms,
   getInvestments, saveInvestments,
+  getFinances, saveFinances,
   getPinHash, savePinHash,
   getFleetPinHash, saveFleetPinHash, hashPin,
   daysUntil, loadAllFromCloud, saveToCloud
@@ -21,10 +23,11 @@ import { exportToExcel, exportFleetToExcel } from './utils/export';
 import { supabase, isSupabaseConfigured, setSupabaseAnonKey, getSupabaseAnonKey } from './utils/supabase';
 
 const NAV = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'OVERVIEW' },
-  { id: 'fleet',     label: 'Fleet',     icon: Truck,          section: 'MODULES' },
-  { id: 'rooms',     label: 'Rooms',     icon: Home,           section: 'MODULES' },
-  { id: 'investments', label: 'Investments', icon: TrendingUp, section: 'MODULES' },
+  { id: 'dashboard',   label: 'Dashboard',        icon: LayoutDashboard, section: 'OVERVIEW' },
+  { id: 'fleet',       label: 'Fleet',            icon: Truck,          section: 'MODULES' },
+  { id: 'rooms',       label: 'Rooms',            icon: Home,           section: 'MODULES' },
+  { id: 'investments', label: 'Investments',      icon: TrendingUp,     section: 'MODULES' },
+  { id: 'finances',    label: 'Expenses & Cards', icon: CreditCard,     section: 'MODULES' },
 ];
 
 export default function App() {
@@ -32,6 +35,7 @@ export default function App() {
   const [vehicles, setVehicles]       = useState(() => getVehicles());
   const [rooms, setRooms]             = useState(() => getRooms());
   const [investments, setInvestments] = useState(() => getInvestments());
+  const [finances, setFinances]       = useState(() => getFinances());
   const [syncStatus, setSyncStatus]   = useState(isSupabaseConfigured() ? 'syncing' : 'offline');
   const [showDbModal, setShowDbModal] = useState(false);
   const [anonKeyInput, setAnonKeyInput] = useState(getSupabaseAnonKey() || '');
@@ -59,6 +63,7 @@ export default function App() {
           if (cloudData.vehicles) setVehicles(cloudData.vehicles);
           if (cloudData.rooms) setRooms(cloudData.rooms);
           if (cloudData.investments) setInvestments(cloudData.investments);
+          if (cloudData.finances) setFinances(cloudData.finances);
           if (cloudData.auth_pin) {
             setPinHash(cloudData.auth_pin);
             savePinHash(cloudData.auth_pin);
@@ -73,6 +78,7 @@ export default function App() {
           saveToCloud('vehicles', vehicles);
           saveToCloud('rooms', rooms);
           saveToCloud('investments', investments);
+          saveToCloud('finances', finances);
           if (pinHash) saveToCloud('auth_pin', pinHash);
           if (fleetPinHash) saveToCloud('auth_fleet_pin', fleetPinHash);
           setSyncStatus('synced');
@@ -89,6 +95,7 @@ export default function App() {
           if (key === 'vehicles' && value) setVehicles(value);
           if (key === 'rooms' && value) setRooms(value);
           if (key === 'investments' && value) setInvestments(value);
+          if (key === 'finances' && value) setFinances(value);
           if (key === 'auth_pin' && value) {
             setPinHash(value);
             savePinHash(value);
@@ -113,6 +120,7 @@ export default function App() {
   const updateVehicles = (v) => { setVehicles(v); saveVehicles(v); };
   const updateRooms    = (r) => { setRooms(r);    saveRooms(r); };
   const updateInvestments = (i) => { setInvestments(i); saveInvestments(i); };
+  const updateFinances = (f) => { setFinances(f); saveFinances(f); };
 
   const handleSaveAnonKey = () => {
     setSupabaseAnonKey(anonKeyInput);
@@ -234,6 +242,7 @@ export default function App() {
       vehicles,
       rooms,
       investments,
+      finances,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -259,6 +268,9 @@ export default function App() {
         }
         if (imported.investments) {
           updateInvestments(imported.investments);
+        }
+        if (imported.finances) {
+          updateFinances(imported.finances);
         }
         alert('Data successfully restored from JSON backup!');
       } catch (err) {
@@ -302,13 +314,24 @@ export default function App() {
   const filteredNav = isFleetOnly ? NAV.filter(n => n.id === 'fleet') : NAV;
   const sections = [...new Set(filteredNav.map(n => n.section))];
   const handleExport = () => isFleetOnly ? exportFleetToExcel(vehicles) : exportToExcel(vehicles, rooms, investments);
-  const pageProps = { vehicles, rooms, investments, updateVehicles, updateRooms, updateInvestments, isFleetOnly };
+  const pageProps = {
+    vehicles,
+    rooms,
+    investments,
+    finances,
+    updateVehicles,
+    updateRooms,
+    updateInvestments,
+    updateFinances,
+    isFleetOnly
+  };
 
   const pageTitle = {
     dashboard:   { title: 'Dashboard', subtitle: 'Your complete asset overview' },
     fleet:       { title: 'Fleet Management', subtitle: `${vehicles.length} vehicles tracked` },
     rooms:       { title: 'Property & Rooms', subtitle: `${rooms.length} room${rooms.length !== 1 ? 's' : ''} managed` },
     investments: { title: 'Investments', subtitle: 'SWP & portfolio tracking' },
+    finances:    { title: 'Expenses & Cards', subtitle: 'Upcoming expense projections, salary, credit cards & statement audit' },
   };
 
   return (
@@ -454,6 +477,7 @@ export default function App() {
           {effectivePage === 'fleet'                       && <Fleet {...pageProps} isFleetOnly={isFleetOnly} />}
           {!isFleetOnly && effectivePage === 'rooms'       && <Rooms {...pageProps} />}
           {!isFleetOnly && effectivePage === 'investments' && <Investments {...pageProps} />}
+          {!isFleetOnly && effectivePage === 'finances'    && <Finances {...pageProps} />}
         </main>
       </div>
 
