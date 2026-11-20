@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, TrendingUp, Home, Truck, Zap, IndianRupee, Landmark, Calendar, Check, ChevronRight } from 'lucide-react';
+import {
+  AlertTriangle, TrendingUp, Home, Truck, Zap, IndianRupee,
+  Landmark, Calendar, Check, ChevronRight, MessageCircle,
+  Shield, ArrowUpRight, ArrowDownRight, PieChart, Activity, Sparkles, Clock
+} from 'lucide-react';
 import {
   daysUntil, formatDate, formatCurrency, currentMonthKey, monthLabel,
-  calculatePendingLoan, getRemainingMonthsCount
+  calculatePendingLoan, getRemainingMonthsCount, getLast12Months
 } from '../utils/storage';
 
 const DOC_LABELS = { insurance: 'Insurance', puc: 'PUC', fitness: 'Fitness', permit: 'Permit' };
@@ -10,7 +14,7 @@ const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐' };
 
 export default function Dashboard({ vehicles, rooms, investments, updateVehicles }) {
   const thisMonth = currentMonthKey();
-  const [loanView, setLoanView] = useState('all'); // 'all' | 'pending_only'
+  const last6Months = useMemo(() => getLast12Months().slice(6), []);
 
   // ── Fleet stats ──────────────────────────────────────────────────────
   const fleetIncome = useMemo(() => {
@@ -105,13 +109,21 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
   // ── Rent stats ────────────────────────────────────────────────────────
   const rentStats = useMemo(() => {
     let paid = 0, unpaid = 0, partial = 0, totalExpected = 0;
+    const unpaidRooms = [];
     rooms.forEach(r => {
       const rent = r.currentRent || 0;
       totalExpected += rent;
       const p = r.payments?.[thisMonth];
-      if (!p || p.status === 'Unpaid') unpaid++;
-      else if (p.status === 'Paid') { paid++; }
-      else { partial++; }
+      if (!p || p.status === 'Unpaid') {
+        unpaid++;
+        unpaidRooms.push({ ...r, status: 'Unpaid', pendingAmount: rent });
+      } else if (p.status === 'Paid') {
+        paid++;
+      } else {
+        partial++;
+        const paidAmt = Number(p.amount) || 0;
+        unpaidRooms.push({ ...r, status: 'Partial', pendingAmount: Math.max(0, rent - paidAmt) });
+      }
     });
     const collected = rooms.reduce((sum, r) => {
       const p = r.payments?.[thisMonth];
@@ -119,12 +131,99 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       if (p?.status === 'Partial') return sum + (Number(p.amount) || 0);
       return sum;
     }, 0);
-    return { paid, unpaid, partial, totalExpected, collected, total: rooms.length };
+    return { paid, unpaid, partial, totalExpected, collected, total: rooms.length, unpaidRooms };
   }, [rooms, thisMonth]);
 
   // ── SWP ───────────────────────────────────────────────────────────────
   const swp = investments?.swp;
   const swpThisMonth = swp?.payouts?.[thisMonth];
+  const swpReceivedAmount = swpThisMonth?.status === 'Received' ? Number(swpThisMonth.amount || swp.monthlyWithdrawal || 0) : 0;
+
+  // ── Monthly Outflow Calculations (EMIs + Policies Due + SIPs) ──────────
+  const monthlyObligations = useMemo(() => {
+    let policyDueTotal = 0;
+    const duePolicies = [];
+    (investments?.policies || []).forEach(p => {
+      if (p.status !== 'Active') return;
+      const due = p.nextDueDate;
+      if (due && due.startsWith(thisMonth)) {
+        const amt = Number(p.premiumAmount || 0);
+        policyDueTotal += amt;
+        duePolicies.push({ name: p.policyName || p.insurer, amount: amt, due });
+      }
+    });
+
+    let sipsDueTotal = 0;
+    (investments?.portfolio || []).forEach(p => {
+      if (p.status === 'Active' && p.frequency === 'Monthly') {
+        sipsDueTotal += Number(p.amount || 0);
+      }
+    });
+
+    return {
+      emiTotal: loanStats.totalMonthlyEmi,
+      policyDueTotal,
+      sipsDueTotal,
+      totalOutflow: loanStats.totalMonthlyEmi + policyDueTotal + sipsDueTotal,
+      duePolicies
+    };
+  }, [loanStats.totalMonthlyEmi, investments, thisMonth]);
+
+  // ── Monthly P&L Summary ───────────────────────────────────────────────
+  const monthlyPL = useMemo(() => {
+    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount;
+    const totalOutflow = monthlyObligations.totalOutflow;
+    const netCashflow = totalInflow - totalOutflow;
+    const isSurplus = netCashflow >= 0;
+
+    return {
+      totalInflow,
+      totalOutflow,
+      netCashflow,
+      isSurplus,
+      fleetIncome,
+      rentCollected: rentStats.collected,
+      swpReceived: swpReceivedAmount
+    };
+  }, [fleetIncome, rentStats.collected, swpReceivedAmount, monthlyObligations.totalOutflow]);
+
+  // ── Net Worth Estimator ───────────────────────────────────────────────
+  const netWorth = useMemo(() => {
+    const swpCorpus = Number(investments?.swp?.corpus || 0);
+    const portfolioValue = (investments?.portfolio || []).reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
+    const sumAssured = (investments?.policies || []).reduce((sum, p) => sum + Number(p.maturityAmount || p.sumAssured || 0), 0);
+    const totalAssets = swpCorpus + portfolioValue + sumAssured;
+    const totalLiabilities = loanStats.totalPending;
+    const net = totalAssets - totalLiabilities;
+    return { swpCorpus, portfolioValue, sumAssured, totalAssets, totalLiabilities, net };
+  }, [investments, loanStats.totalPending]);
+
+  // ── 6-Month Income Trend Data ─────────────────────────────────────────
+  const trendData = useMemo(() => {
+    return last6Months.map(monthKey => {
+      let fleet = 0;
+      vehicles.forEach(v => {
+        (v.income || []).forEach(e => {
+          if (e.date && e.date.startsWith(monthKey)) fleet += Number(e.amount || 0);
+        });
+      });
+      let rent = 0;
+      rooms.forEach(r => {
+        const p = r.payments?.[monthKey];
+        if (p?.status === 'Paid') rent += Number(r.currentRent || 0);
+        else if (p?.status === 'Partial') rent += Number(p.amount || 0);
+      });
+      return {
+        key: monthKey,
+        label: monthLabel(monthKey).split(' ')[0].slice(0, 3),
+        fleet,
+        rent,
+        total: fleet + rent
+      };
+    });
+  }, [last6Months, vehicles, rooms]);
+
+  const maxTrendTotal = Math.max(...trendData.map(d => d.total), 1);
 
   return (
     <div className="animate-in">
@@ -153,6 +252,120 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
           </div>
         </div>
       )}
+
+      {/* ── HIGHLIGHT: MONTHLY P&L SUMMARY & NET WORTH ─────────────────── */}
+      <div className="grid-cols-2 mb-20" style={{ gap: 16 }}>
+        {/* Monthly P&L Card */}
+        <div className="card" style={{
+          background: monthlyPL.isSurplus
+            ? 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, var(--bg-card) 100%)'
+            : 'linear-gradient(135deg, rgba(239,68,68,0.08) 0%, var(--bg-card) 100%)',
+          border: `1px solid ${monthlyPL.isSurplus ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
+          position: 'relative', overflow: 'hidden'
+        }}>
+          <div className="section-header" style={{ marginBottom: 12 }}>
+            <div>
+              <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16 }}>
+                <Activity size={18} color={monthlyPL.isSurplus ? 'var(--accent-green)' : 'var(--accent-red)'} />
+                Monthly Cash Flow ({monthLabel(thisMonth).split(' ')[0]})
+              </div>
+              <div className="section-subtitle">Net position: Realized Inflow vs Monthly Commitments</div>
+            </div>
+            <span className={`badge ${monthlyPL.isSurplus ? 'badge-green' : 'badge-red'}`} style={{ fontSize: 12, padding: '4px 10px' }}>
+              {monthlyPL.isSurplus ? 'Surplus' : 'Deficit'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
+            <div style={{
+              fontSize: 32, fontWeight: 800,
+              color: monthlyPL.isSurplus ? 'var(--accent-green)' : 'var(--accent-red)',
+              letterSpacing: '-0.5px'
+            }}>
+              {monthlyPL.isSurplus ? '+' : ''}{formatCurrency(monthlyPL.netCashflow)}
+            </div>
+            <div className="text-sm text-secondary">
+              Net {monthlyPL.isSurplus ? 'surplus' : 'deficit'} this month
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'var(--bg-base)', padding: '12px 14px', borderRadius: 'var(--radius-md)' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-green)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>
+                <ArrowDownRight size={13} /> Total Inflow Received
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                {formatCurrency(monthlyPL.totalInflow)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                Fleet: {formatCurrency(fleetIncome)} · Rent: {formatCurrency(rentStats.collected)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-red)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>
+                <ArrowUpRight size={13} /> Monthly Outflow Commitments
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                {formatCurrency(monthlyPL.totalOutflow)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                EMIs: {formatCurrency(monthlyObligations.emiTotal)} · Policies/SIPs: {formatCurrency(monthlyObligations.policyDueTotal + monthlyObligations.sipsDueTotal)}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Net Worth Card */}
+        <div className="card" style={{
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, var(--bg-card) 100%)',
+          border: '1px solid rgba(99,102,241,0.25)'
+        }}>
+          <div className="section-header" style={{ marginBottom: 12 }}>
+            <div>
+              <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16 }}>
+                <Sparkles size={18} color="var(--accent-indigo)" />
+                Estimated Net Worth
+              </div>
+              <div className="section-subtitle">Tracked Assets (SWP + Portfolio + Policies) minus Active Debts</div>
+            </div>
+            <span className="badge badge-purple" style={{ fontSize: 12, padding: '4px 10px' }}>
+              Live Portfolio
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 14 }}>
+            <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--accent-indigo)', letterSpacing: '-0.5px' }}>
+              {formatCurrency(netWorth.net)}
+            </div>
+            <div className="text-sm text-secondary">
+              Assets - Liabilities
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'var(--bg-base)', padding: '12px 14px', borderRadius: 'var(--radius-md)' }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-cyan)', textTransform: 'uppercase' }}>Total Tracked Assets</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
+                {formatCurrency(netWorth.totalAssets)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                SWP: {formatCurrency(netWorth.swpCorpus)} · Inv: {formatCurrency(netWorth.portfolioValue)}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-red)', textTransform: 'uppercase' }}>Total Active Debt</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-red)', marginTop: 2 }}>
+                {formatCurrency(netWorth.totalLiabilities)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                Across {loanStats.activeLoanCount} vehicle loans
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Top Stat Cards */}
       <div className="grid-cols-4 mb-20">
@@ -194,6 +407,63 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
           <div className="stat-label">Rent Collected ({monthLabel(thisMonth).split(' ')[0]})</div>
           <div className="stat-value">{formatCurrency(rentStats.collected)}</div>
           <div className="stat-sub">{rentStats.paid}/{rentStats.total} rooms paid</div>
+        </div>
+      </div>
+
+      {/* ── 6-MONTH INCOME TREND VISUALIZATION ─────────────────────────── */}
+      <div className="card mb-20">
+        <div className="section-header" style={{ marginBottom: 16 }}>
+          <div>
+            <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <TrendingUp size={18} color="var(--accent-blue)" /> 6-Month Income History (Fleet + Rent)
+            </div>
+            <div className="section-subtitle">Monthly revenue trends across all assets</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, height: 160, padding: '10px 0 20px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+          {trendData.map(d => {
+            const fleetHeightPct = maxTrendTotal > 0 ? (d.fleet / maxTrendTotal) * 100 : 0;
+            const rentHeightPct = maxTrendTotal > 0 ? (d.rent / maxTrendTotal) * 100 : 0;
+            const isCurrent = d.key === thisMonth;
+
+            return (
+              <div key={d.key} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', justifyContent: 'flex-end' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: isCurrent ? 'var(--accent-blue)' : 'var(--text-muted)', marginBottom: 6 }}>
+                  {formatCurrency(d.total)}
+                </div>
+                <div style={{ width: '100%', maxWidth: 44, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'flex-end', borderRadius: '6px 6px 0 0', overflow: 'hidden', background: 'rgba(255,255,255,0.03)' }}>
+                  <div
+                    style={{
+                      height: `${fleetHeightPct}%`,
+                      background: isCurrent ? 'var(--accent-blue)' : 'rgba(59,130,246,0.6)',
+                      transition: 'height 0.3s'
+                    }}
+                    title={`Fleet: ${formatCurrency(d.fleet)}`}
+                  />
+                  <div
+                    style={{
+                      height: `${rentHeightPct}%`,
+                      background: isCurrent ? 'var(--accent-green)' : 'rgba(16,185,129,0.6)',
+                      transition: 'height 0.3s'
+                    }}
+                    title={`Rent: ${formatCurrency(d.rent)}`}
+                  />
+                </div>
+                <div style={{ marginTop: 8, fontSize: 12, fontWeight: isCurrent ? 700 : 500, color: isCurrent ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                  {d.label} {isCurrent && '●'}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 12, fontSize: 12 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-blue)', display: 'inline-block' }} /> Fleet Income
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-green)', display: 'inline-block' }} /> Rent Collection
+          </span>
         </div>
       </div>
 
@@ -365,7 +635,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Partial</div>
             </div>
           </div>
-          <div>
+          <div className="mb-16">
             <div className="flex justify-between text-sm text-secondary mb-4">
               <span>Collection progress</span>
               <span>{formatCurrency(rentStats.collected)} / {formatCurrency(rentStats.totalExpected)}</span>
@@ -380,6 +650,49 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               />
             </div>
           </div>
+
+          {/* Quick WhatsApp Reminder for Pending Tenants */}
+          {rentStats.unpaidRooms.length > 0 && (
+            <div style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: '12px 14px', border: '1px solid var(--border-subtle)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase' }}>
+                Pending Rent Nudges ({rentStats.unpaidRooms.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {rentStats.unpaidRooms.map(r => {
+                  const phone = r.tenantPhone ? r.tenantPhone.replace(/\D/g, '') : '';
+                  const msg = encodeURIComponent(`Hi ${r.tenant || 'there'}, friendly reminder that your rent of ₹${r.pendingAmount || r.currentRent} for ${monthLabel(thisMonth)} is pending. Kindly pay at the earliest. - AssetFlow`);
+                  const waUrl = phone ? `https://wa.me/91${phone.length === 10 ? phone : phone}?text=${msg}` : null;
+
+                  return (
+                    <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>
+                      <div>
+                        <span style={{ fontWeight: 600 }}>{r.name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>({r.tenant || 'No tenant'})</span>
+                        <span style={{ color: 'var(--accent-red)', fontWeight: 600, marginLeft: 8 }}>
+                          {formatCurrency(r.pendingAmount)}
+                        </span>
+                      </div>
+                      {waUrl ? (
+                        <a
+                          href={waUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-secondary btn-sm"
+                          style={{ color: '#25D366', borderColor: 'rgba(37,211,102,0.3)', padding: '3px 8px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          title="Send reminder via WhatsApp"
+                        >
+                          <MessageCircle size={13} /> WhatsApp
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>No phone</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {rooms.length === 0 && <div className="text-muted text-sm mt-8">No rooms added yet. Go to Rooms to add.</div>}
         </div>
 

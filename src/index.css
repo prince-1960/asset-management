@@ -830,3 +830,211 @@ tbody td:first-child { color: var(--text-primary); font-weight: 500; }
 }
 
 .animate-in { animation: slideInRight 0.3s ease; }
+
+/* ══════════════════════════════════════════════════════════
+   Mobile Responsive — max-width: 768px
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Mobile Bottom Nav ─────────────────────────────────── */
+.mobile-bottom-nav {
+  display: none;
+}
+
+.mobile-bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+}
+
+.mobile-bottom-nav-item.active {
+  color: var(--accent-indigo);
+}
+
+.mobile-bottom-nav-item svg {
+  flex-shrink: 0;
+}
+
+.mobile-nav-badge {
+  position: absolute;
+  top: 4px;
+  right: calc(50% - 18px);
+  background: var(--accent-red);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: var(--radius-full);
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ── Mobile FAB ────────────────────────────────────────── */
+.mobile-fab-wrap {
+  display: none;
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 110;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.mobile-fab-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent-indigo);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.5);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.mobile-fab-btn:hover {
+  background: #4f52d6;
+  transform: scale(1.07);
+}
+
+.mobile-fab-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  animation: slideUp 0.15s ease;
+}
+
+.mobile-fab-menu-item {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: var(--shadow-md);
+  transition: var(--transition);
+}
+
+.mobile-fab-menu-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-active);
+}
+
+/* ── Responsive breakpoint ─────────────────────────────── */
+@media (max-width: 768px) {
+  /* Hide sidebar */
+  .sidebar {
+    display: none !important;
+  }
+
+  /* Main content fills full width */
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  /* Page content bottom padding so it clears the bottom nav */
+  .page-content {
+    padding: 16px;
+    padding-bottom: 70px;
+  }
+
+  /* Topbar adjustments */
+  .topbar {
+    padding: 0 16px;
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--topbar-h);
+    gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .topbar-title { font-size: 17px; }
+  .topbar-subtitle { font-size: 12px; }
+
+  .topbar-actions {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  /* Stat cards full-width on very small or 2-col on mobile */
+  .grid-cols-4,
+  .grid-cols-3,
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Single column when really narrow */
+  @media (max-width: 480px) {
+    .grid-cols-4,
+    .grid-cols-3,
+    .grid-cols-2 {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Modal full width */
+  .modal-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal,
+  .modal-lg {
+    max-width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    padding: 16px;
+    max-height: 92vh;
+  }
+
+  /* Tables horizontally scrollable */
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Show mobile bottom nav */
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--border-soft);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Show FAB */
+  .mobile-fab-wrap {
+    display: flex;
+  }
+
+  /* Form rows stack on mobile */
+  .form-row-2,
+  .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+}

@@ -23,6 +23,27 @@ export const exportToExcel = (vehicles, rooms, investments) => {
     XLSX.utils.book_append_sheet(wb, ws1, 'Fleet Income');
   }
 
+  // ── Sheet 1B: Fleet Maintenance & Fuel ─────────────────────────────────
+  const maintRows = [];
+  vehicles.forEach(v => {
+    (v.maintenance || []).forEach(m => {
+      maintRows.push({
+        Vehicle: v.name,
+        Type: v.type,
+        Date: formatDate(m.date),
+        Category: m.category || 'Maintenance',
+        Amount: m.amount,
+        'Odometer KM': m.odometer || '',
+        'Vendor / Workshop': m.serviceCenter || '',
+        Notes: m.notes || '',
+      });
+    });
+  });
+  if (maintRows.length) {
+    const ws1b = XLSX.utils.json_to_sheet(maintRows);
+    XLSX.utils.book_append_sheet(wb, ws1b, 'Fleet Maintenance');
+  }
+
   // ── Sheet 2: Fleet Loans & EMI ─────────────────────────────────────────
   const emiRows = [];
   vehicles.forEach(v => {
@@ -85,12 +106,34 @@ export const exportToExcel = (vehicles, rooms, investments) => {
   rooms.forEach(room => {
     const paymentKeys = Object.keys(room.payments || {}).sort();
     if (paymentKeys.length === 0) {
-      rentRows.push({ Room: room.name, Tenant: room.tenant || '', Rent: room.currentRent || 0, Month: '', Status: '', Amount: '', Notes: '' });
+      rentRows.push({
+        Property: room.property || 'Main',
+        Room: room.name,
+        Tenant: room.tenant || '',
+        Phone: room.tenantPhone || '',
+        'Security Deposit': room.securityDeposit || '',
+        Rent: room.currentRent || 0,
+        Month: '',
+        Status: '',
+        Amount: '',
+        Notes: ''
+      });
     } else {
       paymentKeys.forEach(month => {
         const p = room.payments[month];
         const rentAtTime = getRentForMonth(room, month);
-        rentRows.push({ Room: room.name, Tenant: room.tenant || '', Rent: rentAtTime, Month: monthLabel(month), Status: p.status, Amount: p.amount || rentAtTime, Notes: p.notes || '' });
+        rentRows.push({
+          Property: room.property || 'Main',
+          Room: room.name,
+          Tenant: room.tenant || '',
+          Phone: room.tenantPhone || '',
+          'Security Deposit': room.securityDeposit || '',
+          Rent: rentAtTime,
+          Month: monthLabel(month),
+          Status: p.status,
+          Amount: p.amount || rentAtTime,
+          Notes: p.notes || ''
+        });
       });
     }
   });

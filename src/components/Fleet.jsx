@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X, Edit2, RefreshCw, ChevronDown, ChevronUp, Trash2, Check, ExternalLink, Sparkles, Calendar, Landmark } from 'lucide-react';
+import { Plus, X, Edit2, RefreshCw, ChevronDown, ChevronUp, Trash2, Check, ExternalLink, Sparkles, Calendar, Landmark, Wrench } from 'lucide-react';
 import { genId, formatDate, daysUntil, formatCurrency, currentMonthKey, monthLabel, getLast12Months, calculatePendingLoan, getRemainingMonthsCount } from '../utils/storage';
 
 const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐' };
@@ -168,6 +168,69 @@ function IncomeModal({ vehicle, entry, onSave, onClose }) {
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" onClick={() => onSave({ ...form, id: entry?.id || genId() })} disabled={!form.amount || !form.date}>
             {entry ? 'Update Income' : 'Add Income'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Maintenance & Fuel Modal ─────────────────────────────────────────────
+const MAINT_CATEGORIES = ['Fuel', 'Servicing', 'Repair', 'Tyres', 'Insurance/Tax', 'Other'];
+
+function MaintenanceModal({ vehicle, entry, onSave, onClose }) {
+  const [form, setForm] = useState(entry || {
+    date: new Date().toISOString().split('T')[0],
+    category: 'Fuel',
+    amount: '',
+    odometer: '',
+    serviceCenter: '',
+    notes: ''
+  });
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <div className="modal-title">{entry ? 'Edit Expense' : 'Log Maintenance / Fuel'} — {vehicle.name}</div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body">
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Date</label>
+              <input className="form-input" type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Category</label>
+              <select className="form-input" value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))}>
+                {MAINT_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Amount (₹)</label>
+              <input className="form-input" type="number" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} placeholder="0" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Odometer / KM Reading</label>
+              <input className="form-input" type="number" value={form.odometer || ''} onChange={e => setForm(p => ({ ...p, odometer: e.target.value }))} placeholder="e.g. 45200" />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Station / Workshop / Vendor</label>
+            <input className="form-input" value={form.serviceCenter || ''} onChange={e => setForm(p => ({ ...p, serviceCenter: e.target.value }))} placeholder="e.g. HP Petrol Pump / Authorized Center" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Notes</label>
+            <textarea className="form-input" value={form.notes || ''} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Details (e.g. 40L Diesel, Full Engine Oil change...)" style={{ minHeight: 60 }} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => onSave({ ...form, id: entry?.id || genId() })} disabled={!form.amount || !form.date}>
+            {entry ? 'Update Expense' : 'Save Expense'}
           </button>
         </div>
       </div>
@@ -375,6 +438,22 @@ export default function Fleet({ vehicles, updateVehicles }) {
     updateVehicles(vehicles.map(v => v.id === vehicleId ? { ...v, income: (v.income || []).filter(e => e.id !== entryId) } : v));
   };
 
+  const saveMaintenance = (vehicleId, entry) => {
+    updateVehicles(vehicles.map(v => {
+      if (v.id !== vehicleId) return v;
+      const list = v.maintenance || [];
+      const idx = list.findIndex(e => e.id === entry.id);
+      const updated = idx >= 0 ? list.map((e, i) => i === idx ? entry : e) : [entry, ...list];
+      return { ...v, maintenance: updated };
+    }));
+    setModal(null);
+  };
+
+  const deleteMaintenance = (vehicleId, entryId) => {
+    if (!confirm('Delete this maintenance record?')) return;
+    updateVehicles(vehicles.map(v => v.id === vehicleId ? { ...v, maintenance: (v.maintenance || []).filter(e => e.id !== entryId) } : v));
+  };
+
   const saveDocs = (vehicleId, docs) => {
     updateVehicles(vehicles.map(v => v.id === vehicleId ? { ...v, documents: docs } : v));
     setModal(null);
@@ -446,6 +525,7 @@ export default function Fleet({ vehicles, updateVehicles }) {
                     <button className={`tab ${tab === 'docs' ? 'active' : ''}`} onClick={() => setTab(v.id, 'docs')}>📋 Documents</button>
                     <button className={`tab ${tab === 'income' ? 'active' : ''}`} onClick={() => setTab(v.id, 'income')}>💰 Income</button>
                     <button className={`tab ${tab === 'emi' ? 'active' : ''}`} onClick={() => setTab(v.id, 'emi')}>🏦 EMI</button>
+                    <button className={`tab ${tab === 'maint' ? 'active' : ''}`} onClick={() => setTab(v.id, 'maint')}>🔧 Service & Fuel</button>
                   </div>
 
                   {/* Documents Tab */}
@@ -593,6 +673,82 @@ export default function Fleet({ vehicles, updateVehicles }) {
                       )}
                     </div>
                   )}
+
+                  {/* Maintenance & Fuel Tab */}
+                  {tab === 'maint' && (
+                    <div>
+                      <div className="flex justify-between items-center mb-12">
+                        <div>
+                          <span className="text-sm text-secondary">Maintenance, repairs & fuel logs</span>
+                          {(v.maintenance || []).length > 0 && (
+                            <span className="badge badge-purple" style={{ marginLeft: 8 }}>
+                              Total: {formatCurrency((v.maintenance || []).reduce((s, m) => s + Number(m.amount || 0), 0))}
+                            </span>
+                          )}
+                        </div>
+                        <button className="btn btn-primary btn-sm" onClick={() => setModal({ type: 'maint', vehicle: v })}>
+                          <Plus size={13} /> Log Expense
+                        </button>
+                      </div>
+
+                      {(!v.maintenance || v.maintenance.length === 0) ? (
+                        <div className="empty-state" style={{ padding: '24px' }}>
+                          <div className="empty-state-title">No maintenance or fuel logged yet</div>
+                          <div className="empty-state-desc">Log oil changes, servicing, tyres, fuel refills, and repairs</div>
+                        </div>
+                      ) : (
+                        <div className="table-wrap">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Date</th>
+                                <th>Category</th>
+                                <th>Amount</th>
+                                <th>Odometer</th>
+                                <th>Vendor / Workshop</th>
+                                <th>Notes</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {v.maintenance.map(m => (
+                                <tr key={m.id}>
+                                  <td>{formatDate(m.date)}</td>
+                                  <td>
+                                    <span className="badge badge-blue">{m.category || 'Maintenance'}</span>
+                                  </td>
+                                  <td style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
+                                    {formatCurrency(m.amount)}
+                                  </td>
+                                  <td>{m.odometer ? `${Number(m.odometer).toLocaleString('en-IN')} KM` : '—'}</td>
+                                  <td>{m.serviceCenter || '—'}</td>
+                                  <td>{m.notes || '—'}</td>
+                                  <td>
+                                    <div className="flex gap-4">
+                                      <button
+                                        className="btn btn-secondary btn-icon btn-sm"
+                                        onClick={() => setModal({ type: 'maint', vehicle: v, entry: m })}
+                                        title="Edit Expense"
+                                      >
+                                        <Edit2 size={12} />
+                                      </button>
+                                      <button
+                                        className="btn btn-danger btn-icon btn-sm"
+                                        onClick={() => deleteMaintenance(v.id, m.id)}
+                                        title="Delete Expense"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -609,6 +765,14 @@ export default function Fleet({ vehicles, updateVehicles }) {
           vehicle={modal.vehicle}
           entry={modal.entry}
           onSave={e => saveIncome(modal.vehicle.id, e)}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'maint' && (
+        <MaintenanceModal
+          vehicle={modal.vehicle}
+          entry={modal.entry}
+          onSave={e => saveMaintenance(modal.vehicle.id, e)}
           onClose={() => setModal(null)}
         />
       )}

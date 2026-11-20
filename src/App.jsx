@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard, Truck, Home, TrendingUp, Download,
-  AlertTriangle, Cloud, CloudOff, Database, X, Check, RefreshCw, Lock, Shield
+  AlertTriangle, Cloud, CloudOff, Database, X, Check, RefreshCw, Lock, Shield, Plus,
+  FileJson, Upload
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Fleet from './components/Fleet';
@@ -37,6 +38,9 @@ export default function App() {
   // PIN Protection State
   const [pinHash, setPinHash]         = useState(() => getPinHash());
   const [isUnlocked, setIsUnlocked]   = useState(false);
+
+  // Mobile FAB state
+  const [showFabMenu, setShowFabMenu] = useState(false);
 
   // Load from Supabase on mount
   useEffect(() => {
@@ -114,6 +118,118 @@ export default function App() {
       setIsUnlocked(false);
       setShowDbModal(false);
     }
+  };
+
+  // ── Browser Push Notifications ──────────────────────────
+  const requestNotificationPermission = () => {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(permission => {
+      if (permission !== 'granted') return;
+
+      const today = new Date();
+      const alerts = [];
+
+      // Check vehicle EMI due dates
+      vehicles.forEach(v => {
+        if (v.emiDueDate) {
+          const due = new Date(v.emiDueDate);
+          const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+          if (diffDays >= 0 && diffDays <= 3) {
+            alerts.push(`${v.name || v.regNumber || 'Vehicle'} EMI due in ${diffDays} day(s) (${v.emiDueDate})`);
+          }
+        }
+      });
+
+      // Check investment policy next due dates
+      const policies = investments?.policies || [];
+      policies.forEach(p => {
+        if (p.nextDueDate) {
+          const due = new Date(p.nextDueDate);
+          const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+          if (diffDays >= 0 && diffDays <= 3) {
+            alerts.push(`Policy "${p.name || 'Policy'}" premium due in ${diffDays} day(s) (${p.nextDueDate})`);
+          }
+        }
+      });
+
+      if (alerts.length > 0) {
+        new Notification('AssetFlow Alert', {
+          body: alerts.join('\n'),
+          icon: '/favicon.ico',
+        });
+      }
+    });
+  };
+
+  // Call notification check once after unlock
+  useEffect(() => {
+    if (isUnlocked) {
+      requestNotificationPermission();
+    }
+  }, [isUnlocked]);
+
+  // ── Auto-lock after 5 minutes of inactivity ─────────────
+  useEffect(() => {
+    if (!isUnlocked || !pinHash) return;
+    let timer;
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        setIsUnlocked(false);
+      }, 5 * 60 * 1000); // 5 minutes inactivity
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach(e => window.addEventListener(e, resetTimer));
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      events.forEach(e => window.removeEventListener(e, resetTimer));
+    };
+  }, [isUnlocked, pinHash]);
+
+  // ── JSON Backup & Restore ────────────────────────────────
+  const handleBackupJson = () => {
+    const data = {
+      version: '2.0',
+      exportedAt: new Date().toISOString(),
+      vehicles,
+      rooms,
+      investments,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AssetFlow_Backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleRestoreJson = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const imported = JSON.parse(evt.target.result);
+        if (imported.vehicles) {
+          updateVehicles(imported.vehicles);
+        }
+        if (imported.rooms) {
+          updateRooms(imported.rooms);
+        }
+        if (imported.investments) {
+          updateInvestments(imported.investments);
+        }
+        alert('Data successfully restored from JSON backup!');
+      } catch (err) {
+        alert('Invalid or corrupted backup file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   // If locked, render PIN screen only
@@ -218,6 +334,15 @@ export default function App() {
             <Download size={15} />
             Export to Excel
           </button>
+
+          <button
+            className="btn btn-secondary w-full"
+            style={{ fontSize: 12, justifyContent: 'center' }}
+            onClick={handleBackupJson}
+            title="Download full JSON backup of all app data"
+          >
+            <FileJson size={14} /> Backup JSON
+          </button>
         </div>
       </aside>
 
@@ -273,6 +398,50 @@ export default function App() {
         </main>
       </div>
 
+      {/* ── Mobile Bottom Navigation Bar ──────────────────── */}
+      <nav className="mobile-bottom-nav">
+        {NAV.map(item => (
+          <button
+            key={item.id}
+            className={`mobile-bottom-nav-item ${page === item.id ? 'active' : ''}`}
+            onClick={() => setPage(item.id)}
+          >
+            <item.icon size={20} />
+            <span>{item.label}</span>
+            {item.id === 'fleet' && expiryAlerts > 0 && (
+              <span className="mobile-nav-badge">{expiryAlerts}</span>
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* ── Mobile FAB ────────────────────────────────────── */}
+      <div className="mobile-fab-wrap">
+        {showFabMenu && (
+          <div className="mobile-fab-menu">
+            <button
+              className="mobile-fab-menu-item"
+              onClick={() => { setPage('fleet'); setShowFabMenu(false); }}
+            >
+              🚗 Log Fleet Income
+            </button>
+            <button
+              className="mobile-fab-menu-item"
+              onClick={() => { setPage('rooms'); setShowFabMenu(false); }}
+            >
+              🏠 Mark Rent Paid
+            </button>
+          </div>
+        )}
+        <button
+          className="mobile-fab-btn"
+          onClick={() => setShowFabMenu(v => !v)}
+          aria-label="Quick actions"
+        >
+          <Plus size={24} />
+        </button>
+      </div>
+
       {/* Database & Security Modal */}
       {showDbModal && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowDbModal(false)}>
@@ -300,6 +469,25 @@ export default function App() {
                   <button className="btn btn-secondary btn-sm" onClick={handleResetPin}>
                     {pinHash ? 'Change PIN' : 'Set PIN'}
                   </button>
+                </div>
+              </div>
+
+              {/* Offline Backup & Restore */}
+              <div style={{ background: 'var(--bg-base)', border: '1px solid var(--border-soft)', padding: 14, borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <FileJson size={16} color="var(--accent-cyan)" /> Offline Data Backup &amp; Recovery
+                </div>
+                <div className="text-sm text-muted mb-12">
+                  Download a full JSON snapshot of your data (Fleet, Rooms, Investments) or restore from a previously exported backup file.
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={handleBackupJson}>
+                    <Download size={13} /> Download JSON Backup
+                  </button>
+                  <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', margin: 0 }}>
+                    <Upload size={13} /> Restore from JSON
+                    <input type="file" accept=".json" onChange={handleRestoreJson} style={{ display: 'none' }} />
+                  </label>
                 </div>
               </div>
 
