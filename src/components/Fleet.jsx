@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Plus, X, Edit2, RefreshCw, ChevronDown, ChevronUp, Trash2, Check, ExternalLink, Sparkles } from 'lucide-react';
-import { genId, formatDate, daysUntil, formatCurrency, currentMonthKey, monthLabel, getLast12Months } from '../utils/storage';
+import { Plus, X, Edit2, RefreshCw, ChevronDown, ChevronUp, Trash2, Check, ExternalLink, Sparkles, Calendar, Landmark } from 'lucide-react';
+import { genId, formatDate, daysUntil, formatCurrency, currentMonthKey, monthLabel, getLast12Months, calculatePendingLoan, getRemainingMonthsCount } from '../utils/storage';
 
 const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐' };
 const VEHICLE_COLORS = {
@@ -82,10 +82,10 @@ function VehicleModal({ vehicle, onSave, onClose }) {
           </div>
 
           <div className="divider" />
-          <div style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: 13, marginBottom: 10 }}>EMI Details</div>
+          <div style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: 13, marginBottom: 10 }}>🏦 Loan & EMI Details</div>
           <div className="form-row form-row-3">
             <div className="form-group">
-              <label className="form-label">EMI Amount (₹)</label>
+              <label className="form-label">Monthly EMI (₹)</label>
               <input className="form-input" type="number" value={form.emi.amount || ''} onChange={e => set(['emi', 'amount'], e.target.value)} placeholder="0" />
             </div>
             <div className="form-group">
@@ -94,7 +94,34 @@ function VehicleModal({ vehicle, onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">Lender / Bank</label>
-              <input className="form-input" value={form.emi.lender || ''} onChange={e => set(['emi', 'lender'], e.target.value)} placeholder="e.g. HDFC" />
+              <input className="form-input" value={form.emi.lender || ''} onChange={e => set(['emi', 'lender'], e.target.value)} placeholder="e.g. HDFC, Mahindra Finance" />
+            </div>
+          </div>
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Last EMI Date (Loan End Month)</label>
+              <input
+                className="form-input"
+                type="month"
+                value={form.emi.endDate || ''}
+                onChange={e => set(['emi', 'endDate'], e.target.value)}
+              />
+              <div className="text-sm text-muted" style={{ marginTop: 4 }}>
+                Month of final EMI (calculates remaining loan automatically)
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Total Loan Amount (Optional ₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.emi.totalLoan || ''}
+                onChange={e => set(['emi', 'totalLoan'], e.target.value)}
+                placeholder="e.g. 1500000"
+              />
+              <div className="text-sm text-muted" style={{ marginTop: 4 }}>
+                Original sanctioned loan principal
+              </div>
             </div>
           </div>
         </div>
@@ -108,13 +135,13 @@ function VehicleModal({ vehicle, onSave, onClose }) {
 }
 
 // ── Income Modal ─────────────────────────────────────────────────────────
-function IncomeModal({ vehicle, onSave, onClose }) {
-  const [form, setForm] = useState({ date: new Date().toISOString().split('T')[0], amount: '', paidBy: '', notes: '' });
+function IncomeModal({ vehicle, entry, onSave, onClose }) {
+  const [form, setForm] = useState(entry || { date: new Date().toISOString().split('T')[0], amount: '', paidBy: '', notes: '' });
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <div className="modal-title">Log Income — {vehicle.name}</div>
+          <div className="modal-title">{entry ? 'Edit Income' : 'Log Income'} — {vehicle.name}</div>
           <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="modal-body">
@@ -130,16 +157,18 @@ function IncomeModal({ vehicle, onSave, onClose }) {
           </div>
           <div className="form-group">
             <label className="form-label">Paid By</label>
-            <input className="form-input" value={form.paidBy} onChange={e => setForm(p => ({ ...p, paidBy: e.target.value }))} placeholder="Name / company" />
+            <input className="form-input" value={form.paidBy} onChange={e => setForm(p => ({ ...p, paidBy: e.target.value }))} placeholder="Client / Company / Driver name" />
           </div>
           <div className="form-group">
             <label className="form-label">Notes</label>
-            <textarea className="form-input" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Optional notes..." style={{ minHeight: 60 }} />
+            <textarea className="form-input" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Optional trip / route notes..." style={{ minHeight: 60 }} />
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave({ ...form, id: genId() })} disabled={!form.amount || !form.date}>Add Income</button>
+          <button className="btn btn-primary" onClick={() => onSave({ ...form, id: entry?.id || genId() })} disabled={!form.amount || !form.date}>
+            {entry ? 'Update Income' : 'Add Income'}
+          </button>
         </div>
       </div>
     </div>
@@ -331,8 +360,14 @@ export default function Fleet({ vehicles, updateVehicles }) {
     }
   };
 
-  const addIncome = (vehicleId, entry) => {
-    updateVehicles(vehicles.map(v => v.id === vehicleId ? { ...v, income: [entry, ...(v.income || [])] } : v));
+  const saveIncome = (vehicleId, entry) => {
+    updateVehicles(vehicles.map(v => {
+      if (v.id !== vehicleId) return v;
+      const list = v.income || [];
+      const idx = list.findIndex(e => e.id === entry.id);
+      const updated = idx >= 0 ? list.map((e, i) => i === idx ? entry : e) : [entry, ...list];
+      return { ...v, income: updated };
+    }));
     setModal(null);
   };
 
@@ -473,9 +508,22 @@ export default function Fleet({ vehicles, updateVehicles }) {
                                   <td style={{ color: 'var(--accent-green)', fontWeight: 600 }}>{formatCurrency(e.amount)}</td>
                                   <td>{e.notes || '—'}</td>
                                   <td>
-                                    <button className="btn btn-danger btn-icon btn-sm" onClick={() => deleteIncome(v.id, e.id)}>
-                                      <Trash2 size={12} />
-                                    </button>
+                                    <div className="flex gap-4">
+                                      <button
+                                        className="btn btn-secondary btn-icon btn-sm"
+                                        onClick={() => setModal({ type: 'income', vehicle: v, entry: e })}
+                                        title="Edit Income"
+                                      >
+                                        <Edit2 size={12} />
+                                      </button>
+                                      <button
+                                        className="btn btn-danger btn-icon btn-sm"
+                                        onClick={() => deleteIncome(v.id, e.id)}
+                                        title="Delete Income"
+                                      >
+                                        <Trash2 size={12} />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}
@@ -490,15 +538,40 @@ export default function Fleet({ vehicles, updateVehicles }) {
                   {tab === 'emi' && (
                     <div>
                       {!v.emi?.amount ? (
-                        <div className="text-muted text-sm">No EMI configured. Edit vehicle to add EMI details.</div>
+                        <div className="text-muted text-sm">
+                          No EMI configured. Edit vehicle to add monthly EMI, lender, and loan end date.
+                        </div>
                       ) : (
                         <>
-                          <div className="flex gap-16 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
-                            <div><div className="text-sm text-muted">Monthly EMI</div><div style={{ fontWeight: 700, fontSize: 18 }}>{formatCurrency(v.emi.amount)}</div></div>
-                            <div><div className="text-sm text-muted">Lender</div><div style={{ fontWeight: 600 }}>{v.emi.lender || '—'}</div></div>
-                            <div><div className="text-sm text-muted">Due Date</div><div style={{ fontWeight: 600 }}>{v.emi.dueDate ? `${v.emi.dueDate}th` : '—'}</div></div>
+                          <div className="grid-cols-3 gap-12 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+                            <div>
+                              <div className="text-sm text-muted">Monthly EMI</div>
+                              <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>{formatCurrency(v.emi.amount)}</div>
+                              <div className="text-sm text-secondary">Due: {v.emi.dueDate ? `${v.emi.dueDate}th` : '1st'} of month</div>
+                            </div>
+                            <div>
+                              <div className="text-sm text-muted">Lender & Tenure</div>
+                              <div style={{ fontWeight: 600 }}>{v.emi.lender || '—'}</div>
+                              <div className="text-sm text-secondary">
+                                {v.emi.endDate ? `Ends: ${monthLabel(v.emi.endDate)}` : 'No end date set'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-sm text-muted">Estimated Loan Left</div>
+                              <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-red)' }}>
+                                {v.emi.endDate ? formatCurrency(calculatePendingLoan(v.emi)) : (v.emi.totalLoan ? formatCurrency(calculatePendingLoan(v.emi)) : '—')}
+                              </div>
+                              <div className="text-sm text-secondary">
+                                {v.emi.endDate ? `${getRemainingMonthsCount(v.emi.endDate)} EMIs remaining` : 'Set end date in Edit Vehicle'}
+                              </div>
+                            </div>
                           </div>
-                          <div className="text-sm text-secondary mb-8">Click a month to toggle paid status</div>
+
+                          <div className="flex justify-between items-center mb-8">
+                            <span className="text-sm text-secondary">Monthly Payment Tracker (Click to mark Paid / Unpaid)</span>
+                            <span className="text-sm text-muted">Current: {monthLabel(thisMonth)}</span>
+                          </div>
+
                           <div className="month-grid">
                             {months12.map(month => {
                               const status = v.emi.paid?.[month] || 'Unpaid';
@@ -532,7 +605,12 @@ export default function Fleet({ vehicles, updateVehicles }) {
         <VehicleModal vehicle={modal.vehicle} onSave={saveVehicle} onClose={() => setModal(null)} />
       )}
       {modal?.type === 'income' && (
-        <IncomeModal vehicle={modal.vehicle} onSave={e => addIncome(modal.vehicle.id, e)} onClose={() => setModal(null)} />
+        <IncomeModal
+          vehicle={modal.vehicle}
+          entry={modal.entry}
+          onSave={e => saveIncome(modal.vehicle.id, e)}
+          onClose={() => setModal(null)}
+        />
       )}
       {modal?.type === 'docs' && (
         <DocModal vehicle={modal.vehicle} onSave={docs => saveDocs(modal.vehicle.id, docs)} onClose={() => setModal(null)} />

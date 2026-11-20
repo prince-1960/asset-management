@@ -160,6 +160,53 @@ export const getLast12Months = () => {
   return months;
 };
 
+export const getRemainingMonthsCount = (endDateStr) => {
+  if (!endDateStr) return 0;
+  const now = new Date();
+  const currentY = now.getFullYear();
+  const currentM = now.getMonth() + 1;
+
+  const parts = endDateStr.split('-');
+  const endY = parseInt(parts[0], 10);
+  const endM = parseInt(parts[1], 10);
+  if (isNaN(endY) || isNaN(endM)) return 0;
+
+  const diff = (endY - currentY) * 12 + (endM - currentM) + 1;
+  return Math.max(0, diff);
+};
+
+export const getMonthsBetween = (startKey, endKey) => {
+  if (!startKey || !endKey) return [];
+  const [startYear, startMonth] = startKey.split('-').map(Number);
+  const [endYear, endMonth] = endKey.split('-').map(Number);
+  const months = [];
+  let y = startYear;
+  let m = startMonth;
+  while (y < endYear || (y === endYear && m <= endMonth)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return months;
+};
+
+export const calculatePendingLoan = (emi) => {
+  if (!emi || !emi.amount) return 0;
+  const emiAmount = Number(emi.amount) || 0;
+  if (emi.endDate) {
+    const remainingMonths = getRemainingMonthsCount(emi.endDate);
+    return remainingMonths * emiAmount;
+  }
+  if (emi.totalLoan) {
+    const paidMonthsCount = Object.values(emi.paid || {}).filter(s => s === 'Paid').length;
+    return Math.max(0, Number(emi.totalLoan) - (paidMonthsCount * emiAmount));
+  }
+  return 0;
+};
+
 export const formatCurrency = (amount) => {
   if (!amount && amount !== 0) return '—';
   return `₹${Number(amount).toLocaleString('en-IN')}`;

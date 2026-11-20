@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { formatDate, formatCurrency, monthLabel } from './storage';
+import { formatDate, formatCurrency, monthLabel, calculatePendingLoan, getRemainingMonthsCount } from './storage';
 
 export const exportToExcel = (vehicles, rooms, investments) => {
   const wb = XLSX.utils.book_new();
@@ -23,23 +23,47 @@ export const exportToExcel = (vehicles, rooms, investments) => {
     XLSX.utils.book_append_sheet(wb, ws1, 'Fleet Income');
   }
 
-  // ── Sheet 2: Fleet EMI ─────────────────────────────────────────────────
+  // ── Sheet 2: Fleet Loans & EMI ─────────────────────────────────────────
   const emiRows = [];
   vehicles.forEach(v => {
     if (v.emi?.amount > 0) {
+      const remainingMonths = v.emi.endDate ? getRemainingMonthsCount(v.emi.endDate) : 0;
+      const pendingLoan = calculatePendingLoan(v.emi);
       const paidEntries = Object.entries(v.emi.paid || {});
       if (paidEntries.length === 0) {
-        emiRows.push({ Vehicle: v.name, Lender: v.emi.lender || '', EMI: v.emi.amount, Month: '', Status: '' });
+        emiRows.push({
+          Vehicle: v.name,
+          Type: v.type,
+          Lender: v.emi.lender || '',
+          'Monthly EMI': v.emi.amount,
+          'Due Day': v.emi.dueDate || 1,
+          'Last EMI Month': v.emi.endDate ? monthLabel(v.emi.endDate) : '',
+          'EMIs Remaining': remainingMonths || '',
+          'Pending Loan Left': pendingLoan || '',
+          Month: '',
+          Status: ''
+        });
       } else {
         paidEntries.forEach(([month, status]) => {
-          emiRows.push({ Vehicle: v.name, Lender: v.emi.lender || '', EMI: v.emi.amount, Month: monthLabel(month), Status: status });
+          emiRows.push({
+            Vehicle: v.name,
+            Type: v.type,
+            Lender: v.emi.lender || '',
+            'Monthly EMI': v.emi.amount,
+            'Due Day': v.emi.dueDate || 1,
+            'Last EMI Month': v.emi.endDate ? monthLabel(v.emi.endDate) : '',
+            'EMIs Remaining': remainingMonths || '',
+            'Pending Loan Left': pendingLoan || '',
+            Month: monthLabel(month),
+            Status: status
+          });
         });
       }
     }
   });
   if (emiRows.length) {
     const ws2 = XLSX.utils.json_to_sheet(emiRows);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Fleet EMI');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Fleet Loans & EMI');
   }
 
   // ── Sheet 3: Vehicle Documents ─────────────────────────────────────────
