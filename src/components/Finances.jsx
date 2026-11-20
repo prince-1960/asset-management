@@ -83,6 +83,11 @@ function CardModal({ card, onSave, onClose }) {
   const [form, setForm] = useState(card || blankCard());
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const handleSave = () => {
+    const finalBank = form.bank === 'Other' && form.customBank ? form.customBank.trim() : form.bank;
+    onSave({ ...form, bank: finalBank || 'Other' });
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-lg">
@@ -98,9 +103,34 @@ function CardModal({ card, onSave, onClose }) {
           <div className="form-row form-row-2">
             <div className="form-group">
               <label className="form-label">Bank / Issuer</label>
-              <select className="form-input" value={form.bank} onChange={e => set('bank', e.target.value)}>
+              <select
+                className="form-input"
+                value={BANKS.slice(0, -1).includes(form.bank) ? form.bank : 'Other'}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === 'Other') {
+                    set('bank', 'Other');
+                    if (!form.customBank) set('customBank', form.bank && !BANKS.includes(form.bank) ? form.bank : '');
+                  } else {
+                    set('bank', val);
+                  }
+                }}
+              >
                 {BANKS.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
+              {(form.bank === 'Other' || (!BANKS.slice(0, -1).includes(form.bank) && form.bank)) && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={form.customBank !== undefined ? form.customBank : (BANKS.includes(form.bank) ? '' : form.bank)}
+                  onChange={e => {
+                    set('customBank', e.target.value);
+                    set('bank', e.target.value || 'Other');
+                  }}
+                  placeholder="Type bank or card issuer..."
+                  autoFocus
+                />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Card Name / Variant</label>
@@ -184,7 +214,7 @@ function CardModal({ card, onSave, onClose }) {
 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={!form.name || !form.totalLimit}>
+          <button className="btn btn-primary" onClick={handleSave} disabled={!form.name || !form.totalLimit}>
             <Check size={14} /> Save Card
           </button>
         </div>

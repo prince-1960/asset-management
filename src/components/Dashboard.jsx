@@ -10,7 +10,7 @@ import {
 } from '../utils/storage';
 
 const DOC_LABELS = { insurance: 'Insurance', puc: 'PUC', fitness: 'Fitness', permit: 'Permit' };
-const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐' };
+const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐', Bike: '🏍️' };
 
 export default function Dashboard({ vehicles, rooms, investments, updateVehicles, finances }) {
   const thisMonth = currentMonthKey();
@@ -503,7 +503,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               <Landmark size={20} color="var(--accent-red)" /> Combined Vehicle Loans & Outstanding Debt
             </div>
             <div className="section-subtitle">
-              Live breakdown of pending loans across all Trucks, Cars, and Traveller
+              Live breakdown of pending loans across all Trucks, Cars, Bikes, and Travellers
             </div>
           </div>
           <div className="flex items-center gap-8">

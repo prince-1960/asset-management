@@ -15,8 +15,8 @@ const INSURERS = [
   'LIC', 'Aditya Birla Capital', 'Max Life', 'HDFC Life', 'SBI Life',
   'ICICI Prudential', 'Bajaj Allianz', 'Tata AIA', 'Kotak Life', 'PNB MetLife', 'Other'
 ];
-const POLICY_TYPES = ['Term', 'Endowment', 'Money Back', 'ULIP', 'Whole Life', 'Health', 'Annuity', 'Child Plan'];
-const FREQUENCIES = ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'One-Time'];
+const POLICY_TYPES = ['Term', 'Endowment', 'Money Back', 'ULIP', 'Whole Life', 'Health', 'Annuity', 'Child Plan', 'Other'];
+const FREQUENCIES = ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'One-Time', 'Other'];
 const PORTFOLIO_TYPES = ['SIP', 'FD', 'RD', 'Mutual Fund', 'PPF', 'NPS', 'Stocks', 'Gold', 'SWP', 'Bonds', 'ETF', 'Other'];
 const PLATFORMS = ['Zerodha', 'Groww', 'Upstox', 'HDFC Bank', 'SBI', 'ICICI Bank', 'Axis Bank', 'Post Office', 'Paytm Money', 'Other'];
 const STATUSES = ['Active', 'Lapsed', 'Paid Up', 'Matured', 'Surrendered'];
@@ -73,16 +73,71 @@ const blankPortfolio = () => ({
 function PolicyModal({ initial, onSave, onClose }) {
   const [form, setForm] = useState(() => initial || blankPolicy());
 
+  const isStandardInsurer = (val) => INSURERS.slice(0, -1).includes(val);
+  const isStandardType = (val) => POLICY_TYPES.slice(0, -1).includes(val);
+  const isStandardFreq = (val) => FREQUENCIES.slice(0, -1).includes(val);
+
+  const [selectedInsurer, setSelectedInsurer] = useState(() => {
+    const v = initial?.insurer || 'LIC';
+    return isStandardInsurer(v) ? v : 'Other';
+  });
+  const [customInsurer, setCustomInsurer] = useState(() => {
+    const v = initial?.insurer || '';
+    return isStandardInsurer(v) ? '' : (v === 'Other' ? '' : v);
+  });
+
+  const [selectedType, setSelectedType] = useState(() => {
+    const v = initial?.type || 'Endowment';
+    return isStandardType(v) ? v : 'Other';
+  });
+  const [customType, setCustomType] = useState(() => {
+    const v = initial?.type || '';
+    return isStandardType(v) ? '' : (v === 'Other' ? '' : v);
+  });
+
+  const [selectedFreq, setSelectedFreq] = useState(() => {
+    const v = initial?.premiumFrequency || 'Yearly';
+    return isStandardFreq(v) ? v : 'Other';
+  });
+  const [customFreq, setCustomFreq] = useState(() => {
+    const v = initial?.premiumFrequency || '';
+    return isStandardFreq(v) ? '' : (v === 'Other' ? '' : v);
+  });
+
   useEffect(() => {
-    setForm(initial || blankPolicy());
+    const f = initial || blankPolicy();
+    setForm(f);
+
+    const vIns = f.insurer || 'LIC';
+    setSelectedInsurer(isStandardInsurer(vIns) ? vIns : 'Other');
+    setCustomInsurer(isStandardInsurer(vIns) ? '' : (vIns === 'Other' ? '' : vIns));
+
+    const vType = f.type || 'Endowment';
+    setSelectedType(isStandardType(vType) ? vType : 'Other');
+    setCustomType(isStandardType(vType) ? '' : (vType === 'Other' ? '' : vType));
+
+    const vFreq = f.premiumFrequency || 'Yearly';
+    setSelectedFreq(isStandardFreq(vFreq) ? vFreq : 'Other');
+    setCustomFreq(isStandardFreq(vFreq) ? '' : (vFreq === 'Other' ? '' : vFreq));
   }, [initial]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = () => {
     if (!form.policyName?.trim() && !form.policyNumber?.trim()) return;
-    const ndd = form.nextDueDate || getNextDueDate(form.startDate, form.premiumFrequency) || '';
-    onSave({ ...form, nextDueDate: ndd });
+
+    const finalInsurer = selectedInsurer === 'Other' ? (customInsurer.trim() || 'Other') : selectedInsurer;
+    const finalType = selectedType === 'Other' ? (customType.trim() || 'Other') : selectedType;
+    const finalFreq = selectedFreq === 'Other' ? (customFreq.trim() || 'Other') : selectedFreq;
+
+    const ndd = form.nextDueDate || getNextDueDate(form.startDate, finalFreq) || '';
+    onSave({
+      ...form,
+      insurer: finalInsurer,
+      type: finalType,
+      premiumFrequency: finalFreq,
+      nextDueDate: ndd,
+    });
   };
 
   return (
@@ -110,9 +165,23 @@ function PolicyModal({ initial, onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">Insurance Company</label>
-              <select className="form-input" value={form.insurer} onChange={e => set('insurer', e.target.value)}>
+              <select
+                className="form-input"
+                value={selectedInsurer}
+                onChange={e => setSelectedInsurer(e.target.value)}
+              >
                 {INSURERS.map(i => <option key={i} value={i}>{i}</option>)}
               </select>
+              {selectedInsurer === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customInsurer}
+                  onChange={e => setCustomInsurer(e.target.value)}
+                  placeholder="Type company / insurer name..."
+                  autoFocus
+                />
+              )}
             </div>
           </div>
 
@@ -120,9 +189,23 @@ function PolicyModal({ initial, onSave, onClose }) {
           <div className="form-row form-row-3">
             <div className="form-group">
               <label className="form-label">Policy Type</label>
-              <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+              <select
+                className="form-input"
+                value={selectedType}
+                onChange={e => setSelectedType(e.target.value)}
+              >
                 {POLICY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+              {selectedType === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customType}
+                  onChange={e => setCustomType(e.target.value)}
+                  placeholder="Type custom policy type..."
+                  autoFocus
+                />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Policy Number</label>
@@ -177,9 +260,23 @@ function PolicyModal({ initial, onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">Payment Frequency</label>
-              <select className="form-input" value={form.premiumFrequency} onChange={e => set('premiumFrequency', e.target.value)}>
+              <select
+                className="form-input"
+                value={selectedFreq}
+                onChange={e => setSelectedFreq(e.target.value)}
+              >
                 {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
+              {selectedFreq === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customFreq}
+                  onChange={e => setCustomFreq(e.target.value)}
+                  placeholder="Type custom frequency (e.g. Bi-monthly, Weekly)..."
+                  autoFocus
+                />
+              )}
             </div>
           </div>
 
@@ -296,15 +393,69 @@ function PolicyModal({ initial, onSave, onClose }) {
 function PortfolioModal({ initial, onSave, onClose }) {
   const [form, setForm] = useState(() => initial || blankPortfolio());
 
+  const isStandardType = (val) => PORTFOLIO_TYPES.slice(0, -1).includes(val);
+  const isStandardPlatform = (val) => PLATFORMS.slice(0, -1).includes(val);
+  const isStandardFreq = (val) => FREQUENCIES.slice(0, -1).includes(val);
+
+  const [selectedType, setSelectedType] = useState(() => {
+    const v = initial?.type || 'SIP';
+    return isStandardType(v) ? v : 'Other';
+  });
+  const [customType, setCustomType] = useState(() => {
+    const v = initial?.type || '';
+    return isStandardType(v) ? '' : (v === 'Other' ? '' : v);
+  });
+
+  const [selectedPlatform, setSelectedPlatform] = useState(() => {
+    const v = initial?.platform || '';
+    if (!v) return '';
+    return isStandardPlatform(v) ? v : 'Other';
+  });
+  const [customPlatform, setCustomPlatform] = useState(() => {
+    const v = initial?.platform || '';
+    return isStandardPlatform(v) ? '' : (v === 'Other' ? '' : v);
+  });
+
+  const [selectedFreq, setSelectedFreq] = useState(() => {
+    const v = initial?.frequency || 'Monthly';
+    return isStandardFreq(v) ? v : 'Other';
+  });
+  const [customFreq, setCustomFreq] = useState(() => {
+    const v = initial?.frequency || '';
+    return isStandardFreq(v) ? '' : (v === 'Other' ? '' : v);
+  });
+
   useEffect(() => {
-    setForm(initial || blankPortfolio());
+    const f = initial || blankPortfolio();
+    setForm(f);
+
+    const vType = f.type || 'SIP';
+    setSelectedType(isStandardType(vType) ? vType : 'Other');
+    setCustomType(isStandardType(vType) ? '' : (vType === 'Other' ? '' : vType));
+
+    const vPlat = f.platform || '';
+    setSelectedPlatform(!vPlat ? '' : (isStandardPlatform(vPlat) ? vPlat : 'Other'));
+    setCustomPlatform(isStandardPlatform(vPlat) ? '' : (vPlat === 'Other' ? '' : vPlat));
+
+    const vFreq = f.frequency || 'Monthly';
+    setSelectedFreq(isStandardFreq(vFreq) ? vFreq : 'Other');
+    setCustomFreq(isStandardFreq(vFreq) ? '' : (vFreq === 'Other' ? '' : vFreq));
   }, [initial]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const handleSave = () => {
-    if (!form.name?.trim() && !form.type) return;
-    onSave({ ...form });
+    if (!form.name?.trim() && !selectedType) return;
+    const finalType = selectedType === 'Other' ? (customType.trim() || 'Other') : selectedType;
+    const finalPlatform = selectedPlatform === 'Other' ? (customPlatform.trim() || 'Other') : selectedPlatform;
+    const finalFreq = selectedFreq === 'Other' ? (customFreq.trim() || 'Other') : selectedFreq;
+
+    onSave({
+      ...form,
+      type: finalType,
+      platform: finalPlatform,
+      frequency: finalFreq
+    });
   };
 
   return (
@@ -322,9 +473,23 @@ function PortfolioModal({ initial, onSave, onClose }) {
           <div className="form-row form-row-2">
             <div className="form-group">
               <label className="form-label">Investment Type</label>
-              <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+              <select
+                className="form-input"
+                value={selectedType}
+                onChange={e => setSelectedType(e.target.value)}
+              >
                 {PORTFOLIO_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+              {selectedType === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customType}
+                  onChange={e => setCustomType(e.target.value)}
+                  placeholder="Type investment type (e.g. Crypto, Real Estate, P2P)..."
+                  autoFocus
+                />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Name / Scheme *</label>
@@ -340,10 +505,24 @@ function PortfolioModal({ initial, onSave, onClose }) {
           <div className="form-row form-row-2">
             <div className="form-group">
               <label className="form-label">Platform / Bank</label>
-              <select className="form-input" value={form.platform} onChange={e => set('platform', e.target.value)}>
+              <select
+                className="form-input"
+                value={selectedPlatform}
+                onChange={e => setSelectedPlatform(e.target.value)}
+              >
                 <option value="">— Select Platform / Bank —</option>
                 {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+              {selectedPlatform === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customPlatform}
+                  onChange={e => setCustomPlatform(e.target.value)}
+                  placeholder="Type bank or platform name..."
+                  autoFocus
+                />
+              )}
             </div>
             <div className="form-group">
               <label className="form-label">Folio / Account Number</label>
@@ -369,9 +548,23 @@ function PortfolioModal({ initial, onSave, onClose }) {
             </div>
             <div className="form-group">
               <label className="form-label">Frequency</label>
-              <select className="form-input" value={form.frequency} onChange={e => set('frequency', e.target.value)}>
+              <select
+                className="form-input"
+                value={selectedFreq}
+                onChange={e => setSelectedFreq(e.target.value)}
+              >
                 {FREQUENCIES.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
+              {selectedFreq === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customFreq}
+                  onChange={e => setCustomFreq(e.target.value)}
+                  placeholder="Type frequency (e.g. Quarterly, One-Time)..."
+                  autoFocus
+                />
+              )}
             </div>
           </div>
 

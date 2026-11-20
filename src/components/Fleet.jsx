@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { Plus, X, Edit2, RefreshCw, ChevronDown, ChevronUp, Trash2, Check, ExternalLink, Sparkles, Calendar, Landmark, Wrench } from 'lucide-react';
 import { genId, formatDate, daysUntil, formatCurrency, currentMonthKey, monthLabel, getLast12Months, calculatePendingLoan, getRemainingMonthsCount } from '../utils/storage';
 
-const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐' };
+const VEHICLE_EMOJI = { Truck: '🚛', Car: '🚗', Traveller: '🚐', Bike: '🏍️' };
 const VEHICLE_COLORS = {
   Truck: 'rgba(59,130,246,0.15)',
   Car: 'rgba(16,185,129,0.15)',
   Traveller: 'rgba(245,158,11,0.15)',
+  Bike: 'rgba(236,72,153,0.15)',
 };
 const DOC_KEYS = ['insurance', 'puc', 'fitness', 'permit'];
 const DOC_LABELS = { insurance: 'Insurance', puc: 'PUC', fitness: 'Fitness Certificate', permit: 'Permit' };
@@ -66,7 +67,10 @@ function VehicleModal({ vehicle, onSave, onClose }) {
             <div className="form-group">
               <label className="form-label">Type</label>
               <select className="form-input" value={form.type} onChange={e => set(['type'], e.target.value)}>
-                <option>Car</option><option>Truck</option><option>Traveller</option>
+                <option>Car</option>
+                <option>Truck</option>
+                <option>Traveller</option>
+                <option>Bike</option>
               </select>
             </div>
           </div>
