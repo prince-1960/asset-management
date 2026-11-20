@@ -8,6 +8,7 @@ const KEYS = {
   INVESTMENTS: 'assetflow_investments',
   SETTINGS: 'assetflow_settings',
   PIN_HASH: 'assetflow_pin_hash',
+  FLEET_PIN_HASH: 'assetflow_fleet_pin_hash',
 };
 
 // Generic get/set for localStorage
@@ -92,6 +93,21 @@ export const savePinHash = (hash) => {
   set(KEYS.PIN_HASH, hash);
   saveToCloud('auth_pin', hash);
 };
+
+export const getFleetPinHash = () => get(KEYS.FLEET_PIN_HASH) || '';
+export const saveFleetPinHash = (hash) => {
+  set(KEYS.FLEET_PIN_HASH, hash);
+  saveToCloud('auth_fleet_pin', hash);
+};
+
+// SHA-256 Hasher with dedicated salt
+export async function hashPin(pin) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + '_assetflow_salt_2026');
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 // Default vehicle list
 function defaultVehicles() {

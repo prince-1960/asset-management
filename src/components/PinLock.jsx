@@ -1,15 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Lock, Unlock, ShieldCheck, KeyRound, Delete } from 'lucide-react';
+import { Lock, Unlock, ShieldCheck, KeyRound, Delete, Truck } from 'lucide-react';
+import { hashPin } from '../utils/storage';
 
-async function hashPin(pin) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pin + '_assetflow_salt_2026');
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-export default function PinLock({ storedPinHash, onUnlock, onSetPin }) {
+export default function PinLock({ storedPinHash, fleetPinHash, onUnlock, onSetPin }) {
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [isSettingUp, setIsSettingUp] = useState(!storedPinHash);
@@ -35,8 +28,6 @@ export default function PinLock({ storedPinHash, onUnlock, onSetPin }) {
         handleDigit(e.key);
       } else if (e.key === 'Backspace') {
         handleBackspace();
-      } else if (e.key === 'Enter') {
-        // Automatically handled when 4 digits reached
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -66,7 +57,7 @@ export default function PinLock({ storedPinHash, onUnlock, onSetPin }) {
           if (nextPin === confirmPin) {
             const hash = await hashPin(nextPin);
             onSetPin(hash);
-            onUnlock();
+            onUnlock('owner');
           } else {
             triggerError('PINs do not match. Try again.');
             setStep('create');
@@ -74,10 +65,12 @@ export default function PinLock({ storedPinHash, onUnlock, onSetPin }) {
           }
         }
       } else {
-        // Verifying entered PIN
+        // Verifying entered PIN against Master or Fleet PIN
         const enteredHash = await hashPin(nextPin);
         if (enteredHash === storedPinHash) {
-          onUnlock();
+          onUnlock('owner');
+        } else if (fleetPinHash && enteredHash === fleetPinHash) {
+          onUnlock('fleet_only');
         } else {
           triggerError('Incorrect PIN. Try again.');
         }
@@ -137,7 +130,7 @@ export default function PinLock({ storedPinHash, onUnlock, onSetPin }) {
         <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', margin: '0 0 24px' }}>
           {isSettingUp
             ? (step === 'create' ? 'Set a 4-digit PIN to secure your financial data' : 'Re-enter your 4-digit PIN to confirm')
-            : 'Enter your 4-digit PIN to access your assets'}
+            : (fleetPinHash ? 'Enter Master PIN or Fleet PIN' : 'Enter your 4-digit PIN to access your assets')}
         </p>
 
         {/* PIN Dots Display */}

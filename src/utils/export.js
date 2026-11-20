@@ -242,6 +242,67 @@ export const exportToExcel = (vehicles, rooms, investments) => {
   XLSX.writeFile(wb, filename);
 };
 
+export const exportFleetToExcel = (vehicles) => {
+  const wb = XLSX.utils.book_new();
+
+  // Fleet Income
+  const incomeRows = [];
+  vehicles.forEach(v => {
+    (v.income || []).forEach(entry => {
+      incomeRows.push({
+        Vehicle: v.name,
+        Type: v.type,
+        Date: formatDate(entry.date),
+        Amount: entry.amount,
+        'Paid By': entry.paidBy || '',
+        Notes: entry.notes || '',
+      });
+    });
+  });
+  if (incomeRows.length) {
+    const ws1 = XLSX.utils.json_to_sheet(incomeRows);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Fleet Income');
+  }
+
+  // Fleet Maintenance & Fuel
+  const maintRows = [];
+  vehicles.forEach(v => {
+    (v.maintenance || []).forEach(m => {
+      maintRows.push({
+        Vehicle: v.name,
+        Type: v.type,
+        Date: formatDate(m.date),
+        Category: m.category || 'Maintenance',
+        Amount: m.amount,
+        'Odometer KM': m.odometer || '',
+        'Vendor / Workshop': m.serviceCenter || '',
+        Notes: m.notes || '',
+      });
+    });
+  });
+  if (maintRows.length) {
+    const ws1b = XLSX.utils.json_to_sheet(maintRows);
+    XLSX.utils.book_append_sheet(wb, ws1b, 'Fleet Maintenance');
+  }
+
+  // Vehicle Documents
+  const docRows = vehicles.map(v => ({
+    Vehicle: v.name,
+    'Reg Number': v.regNumber || '',
+    'Insurance Expiry': formatDate(v.documents?.insurance?.expiry),
+    Insurer: v.documents?.insurance?.insurer || '',
+    'PUC Expiry': formatDate(v.documents?.puc?.expiry),
+    'Fitness Expiry': formatDate(v.documents?.fitness?.expiry),
+    'Permit Expiry': formatDate(v.documents?.permit?.expiry),
+    'Permit Type': v.documents?.permit?.type || '',
+  }));
+  const ws3 = XLSX.utils.json_to_sheet(docRows);
+  XLSX.utils.book_append_sheet(wb, ws3, 'Vehicle Documents');
+
+  const filename = `AssetFlow_Fleet_${new Date().toISOString().split('T')[0]}.xlsx`;
+  XLSX.writeFile(wb, filename);
+};
+
 function getRentForMonth(room, monthKey) {
   if (!room.rentHistory || room.rentHistory.length === 0) {
     return room.currentRent || 0;

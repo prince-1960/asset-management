@@ -14,9 +14,10 @@ import {
   getRooms, saveRooms,
   getInvestments, saveInvestments,
   getPinHash, savePinHash,
+  getFleetPinHash, saveFleetPinHash, hashPin,
   daysUntil, loadAllFromCloud, saveToCloud
 } from './utils/storage';
-import { exportToExcel } from './utils/export';
+import { exportToExcel, exportFleetToExcel } from './utils/export';
 import { supabase, isSupabaseConfigured, setSupabaseAnonKey, getSupabaseAnonKey } from './utils/supabase';
 
 const NAV = [
@@ -35,9 +36,13 @@ export default function App() {
   const [showDbModal, setShowDbModal] = useState(false);
   const [anonKeyInput, setAnonKeyInput] = useState(getSupabaseAnonKey() || '');
 
-  // PIN Protection State
-  const [pinHash, setPinHash]         = useState(() => getPinHash());
-  const [isUnlocked, setIsUnlocked]   = useState(false);
+  // PIN & Role-Based Access Control State
+  const [pinHash, setPinHash]             = useState(() => getPinHash());
+  const [fleetPinHash, setFleetPinHash]   = useState(() => getFleetPinHash());
+  const [userRole, setUserRole]           = useState('owner'); // 'owner' | 'fleet_only'
+  const [isUnlocked, setIsUnlocked]       = useState(false);
+  const [fleetPinInput, setFleetPinInput] = useState('');
+  const [showFleetPinInput, setShowFleetPinInput] = useState(false);
 
   // Mobile FAB state
   const [showFabMenu, setShowFabMenu] = useState(false);
@@ -58,6 +63,10 @@ export default function App() {
             setPinHash(cloudData.auth_pin);
             savePinHash(cloudData.auth_pin);
           }
+          if (cloudData.auth_fleet_pin) {
+            setFleetPinHash(cloudData.auth_fleet_pin);
+            saveFleetPinHash(cloudData.auth_fleet_pin);
+          }
           setSyncStatus('synced');
         } else {
           // If cloud is empty, upload initial local data to seed Supabase
@@ -65,6 +74,7 @@ export default function App() {
           saveToCloud('rooms', rooms);
           saveToCloud('investments', investments);
           if (pinHash) saveToCloud('auth_pin', pinHash);
+          if (fleetPinHash) saveToCloud('auth_fleet_pin', fleetPinHash);
           setSyncStatus('synced');
         }
       }).catch(() => {
@@ -82,6 +92,10 @@ export default function App() {
           if (key === 'auth_pin' && value) {
             setPinHash(value);
             savePinHash(value);
+          }
+          if (key === 'auth_fleet_pin' && value) {
+            setFleetPinHash(value);
+            saveFleetPinHash(value);
           }
           setSyncStatus('synced');
         })
@@ -112,11 +126,34 @@ export default function App() {
   };
 
   const handleResetPin = () => {
-    if (confirm('Are you sure you want to change your PIN? You will be prompted to enter a new 4-digit PIN.')) {
+    if (confirm('Are you sure you want to change your Master PIN? You will be prompted to enter a new 4-digit PIN.')) {
       setPinHash('');
       savePinHash('');
       setIsUnlocked(false);
       setShowDbModal(false);
+    }
+  };
+
+  const handleSaveFleetPin = async (rawPin) => {
+    if (!rawPin || rawPin.length !== 4) {
+      alert('Please enter a 4-digit PIN for fleet access.');
+      return;
+    }
+    const hash = await hashPin(rawPin);
+    setFleetPinHash(hash);
+    saveFleetPinHash(hash);
+    setShowFleetPinInput(false);
+    setFleetPinInput('');
+    alert('Fleet Access PIN successfully saved! Your brother can now log in using this 4-digit PIN.');
+  };
+
+  const handleRemoveFleetPin = () => {
+    if (confirm('Disable Fleet Access PIN? Your brother will no longer be able to log in with this PIN.')) {
+      setFleetPinHash('');
+      saveFleetPinHash('');
+      setShowFleetPinInput(false);
+      setFleetPinInput('');
+      alert('Fleet Access PIN disabled.');
     }
   };
 
@@ -237,7 +274,14 @@ export default function App() {
     return (
       <PinLock
         storedPinHash={pinHash}
-        onUnlock={() => setIsUnlocked(true)}
+        fleetPinHash={fleetPinHash}
+        onUnlock={(role = 'owner') => {
+          setUserRole(role);
+          setIsUnlocked(true);
+          if (role === 'fleet_only') {
+            setPage('fleet');
+          }
+        }}
         onSetPin={handleSetPin}
       />
     );
@@ -253,9 +297,12 @@ export default function App() {
     return count;
   }, 0);
 
-  const sections = [...new Set(NAV.map(n => n.section))];
-  const handleExport = () => exportToExcel(vehicles, rooms, investments);
-  const pageProps = { vehicles, rooms, investments, updateVehicles, updateRooms, updateInvestments };
+  const isFleetOnly = userRole === 'fleet_only';
+  const effectivePage = isFleetOnly ? 'fleet' : page;
+  const filteredNav = isFleetOnly ? NAV.filter(n => n.id === 'fleet') : NAV;
+  const sections = [...new Set(filteredNav.map(n => n.section))];
+  const handleExport = () => isFleetOnly ? exportFleetToExcel(vehicles) : exportToExcel(vehicles, rooms, investments);
+  const pageProps = { vehicles, rooms, investments, updateVehicles, updateRooms, updateInvestments, isFleetOnly };
 
   const pageTitle = {
     dashboard:   { title: 'Dashboard', subtitle: 'Your complete asset overview' },
@@ -270,10 +317,10 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="sidebar-logo-mark">
-            <div className="sidebar-logo-icon">💼</div>
+            <div className="sidebar-logo-icon">{isFleetOnly ? '🚛' : '💼'}</div>
             <div>
               <div className="sidebar-logo-text">AssetFlow</div>
-              <div className="sidebar-logo-sub">Personal Dashboard</div>
+              <div className="sidebar-logo-sub">{isFleetOnly ? 'Fleet Portal' : 'Personal Dashboard'}</div>
             </div>
           </div>
         </div>
@@ -282,10 +329,10 @@ export default function App() {
           {sections.map(section => (
             <div key={section}>
               <div className="nav-section-label">{section}</div>
-              {NAV.filter(n => n.section === section).map(item => (
+              {filteredNav.filter(n => n.section === section).map(item => (
                 <button
                   key={item.id}
-                  className={`nav-item ${page === item.id ? 'active' : ''}`}
+                  className={`nav-item ${effectivePage === item.id ? 'active' : ''}`}
                   onClick={() => setPage(item.id)}
                   id={`nav-${item.id}`}
                 >
@@ -301,30 +348,32 @@ export default function App() {
         </nav>
 
         <div style={{ padding: '12px 10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button
-            className="btn btn-secondary w-full"
-            style={{ fontSize: 12, justifyContent: 'center' }}
-            onClick={() => setShowDbModal(true)}
-          >
-            {syncStatus === 'synced' ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-green)' }}>
-                <Cloud size={14} /> Cloud Synced
-              </span>
-            ) : syncStatus === 'syncing' ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-cyan)' }}>
-                <RefreshCw size={14} className="spinner" /> Syncing...
-              </span>
-            ) : (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)' }}>
-                <Database size={14} /> Connect Cloud DB
-              </span>
-            )}
-          </button>
+          {!isFleetOnly && (
+            <button
+              className="btn btn-secondary w-full"
+              style={{ fontSize: 12, justifyContent: 'center' }}
+              onClick={() => setShowDbModal(true)}
+            >
+              {syncStatus === 'synced' ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-green)' }}>
+                  <Cloud size={14} /> Cloud Synced
+                </span>
+              ) : syncStatus === 'syncing' ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-cyan)' }}>
+                  <RefreshCw size={14} className="spinner" /> Syncing...
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-muted)' }}>
+                  <Database size={14} /> Connect Cloud DB
+                </span>
+              )}
+            </button>
+          )}
 
           <button
             className="btn btn-secondary w-full"
             style={{ fontSize: 12, justifyContent: 'center' }}
-            onClick={() => setIsUnlocked(false)}
+            onClick={() => { setIsUnlocked(false); setUserRole('owner'); }}
             title="Lock app now"
           >
             <Lock size={14} /> Lock Dashboard
@@ -332,17 +381,19 @@ export default function App() {
 
           <button className="btn btn-secondary w-full" onClick={handleExport} id="btn-export-all">
             <Download size={15} />
-            Export to Excel
+            {isFleetOnly ? 'Export Fleet' : 'Export to Excel'}
           </button>
 
-          <button
-            className="btn btn-secondary w-full"
-            style={{ fontSize: 12, justifyContent: 'center' }}
-            onClick={handleBackupJson}
-            title="Download full JSON backup of all app data"
-          >
-            <FileJson size={14} /> Backup JSON
-          </button>
+          {!isFleetOnly && (
+            <button
+              className="btn btn-secondary w-full"
+              style={{ fontSize: 12, justifyContent: 'center' }}
+              onClick={handleBackupJson}
+              title="Download full JSON backup of all app data"
+            >
+              <FileJson size={14} /> Backup JSON
+            </button>
+          )}
         </div>
       </aside>
 
@@ -350,33 +401,41 @@ export default function App() {
       <div className="main-content">
         <header className="topbar">
           <div>
-            <div className="topbar-title">{pageTitle[page]?.title}</div>
-            <div className="topbar-subtitle">{pageTitle[page]?.subtitle}</div>
+            <div className="topbar-title">{pageTitle[effectivePage]?.title}</div>
+            <div className="topbar-subtitle">{pageTitle[effectivePage]?.subtitle}</div>
           </div>
           <div className="topbar-actions">
+            {isFleetOnly && (
+              <span className="badge badge-purple" style={{ padding: '6px 12px', fontSize: 12 }}>
+                🚛 Fleet Access Mode
+              </span>
+            )}
+
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => setIsUnlocked(false)}
+              onClick={() => { setIsUnlocked(false); setUserRole('owner'); }}
               title="Lock dashboard"
             >
               <Lock size={14} /> Lock
             </button>
 
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setShowDbModal(true)}
-              title="Cloud Database Settings"
-            >
-              {syncStatus === 'synced' ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-green)' }}>
-                  <Cloud size={14} /> Synced
-                </span>
-              ) : (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Database size={14} /> Database
-                </span>
-              )}
-            </button>
+            {!isFleetOnly && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowDbModal(true)}
+                title="Cloud Database Settings"
+              >
+                {syncStatus === 'synced' ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-green)' }}>
+                    <Cloud size={14} /> Synced
+                  </span>
+                ) : (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Database size={14} /> Database
+                  </span>
+                )}
+              </button>
+            )}
 
             {expiryAlerts > 0 && (
               <div className="alert alert-danger" style={{ padding: '8px 14px', marginBottom: 0 }}>
@@ -385,25 +444,25 @@ export default function App() {
               </div>
             )}
             <button className="btn btn-secondary btn-sm" onClick={handleExport} id="btn-topbar-export">
-              <Download size={14} /> Export
+              <Download size={14} /> {isFleetOnly ? 'Export Fleet' : 'Export'}
             </button>
           </div>
         </header>
 
         <main className="page-content">
-          {page === 'dashboard'   && <Dashboard {...pageProps} />}
-          {page === 'fleet'       && <Fleet {...pageProps} />}
-          {page === 'rooms'       && <Rooms {...pageProps} />}
-          {page === 'investments' && <Investments {...pageProps} />}
+          {!isFleetOnly && effectivePage === 'dashboard'   && <Dashboard {...pageProps} />}
+          {effectivePage === 'fleet'                       && <Fleet {...pageProps} isFleetOnly={isFleetOnly} />}
+          {!isFleetOnly && effectivePage === 'rooms'       && <Rooms {...pageProps} />}
+          {!isFleetOnly && effectivePage === 'investments' && <Investments {...pageProps} />}
         </main>
       </div>
 
       {/* ── Mobile Bottom Navigation Bar ──────────────────── */}
       <nav className="mobile-bottom-nav">
-        {NAV.map(item => (
+        {filteredNav.map(item => (
           <button
             key={item.id}
-            className={`mobile-bottom-nav-item ${page === item.id ? 'active' : ''}`}
+            className={`mobile-bottom-nav-item ${effectivePage === item.id ? 'active' : ''}`}
             onClick={() => setPage(item.id)}
           >
             <item.icon size={20} />
@@ -417,7 +476,7 @@ export default function App() {
 
       {/* ── Mobile FAB ────────────────────────────────────── */}
       <div className="mobile-fab-wrap">
-        {showFabMenu && (
+        {showFabMenu && !isFleetOnly && (
           <div className="mobile-fab-menu">
             <button
               className="mobile-fab-menu-item"
@@ -435,7 +494,13 @@ export default function App() {
         )}
         <button
           className="mobile-fab-btn"
-          onClick={() => setShowFabMenu(v => !v)}
+          onClick={() => {
+            if (isFleetOnly) {
+              setPage('fleet');
+            } else {
+              setShowFabMenu(v => !v);
+            }
+          }}
           aria-label="Quick actions"
         >
           <Plus size={24} />
@@ -460,15 +525,69 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Shield size={16} color="var(--accent-indigo)" /> Master PIN Protection
+                      <Shield size={16} color="var(--accent-indigo)" /> Master PIN (Owner - Full Access)
                     </div>
                     <div className="text-sm text-muted" style={{ marginTop: 2 }}>
-                      {pinHash ? 'Your dashboard is protected with a 4-digit PIN.' : 'No PIN configured yet.'}
+                      {pinHash ? 'Owner PIN is active. Gives full access to all assets, finances, debts, and settings.' : 'No PIN configured yet.'}
                     </div>
                   </div>
                   <button className="btn btn-secondary btn-sm" onClick={handleResetPin}>
-                    {pinHash ? 'Change PIN' : 'Set PIN'}
+                    {pinHash ? 'Change Master PIN' : 'Set Master PIN'}
                   </button>
+                </div>
+              </div>
+
+              {/* Fleet-Only / Brother's Access PIN */}
+              <div style={{ background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)', padding: 14, borderRadius: 'var(--radius-md)', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Truck size={16} color="var(--accent-cyan)" /> Fleet Access PIN (Brother's Access)
+                    </div>
+                    <div className="text-sm text-muted" style={{ marginTop: 2 }}>
+                      {fleetPinHash
+                        ? 'Active: Entering this 4-digit PIN gives access ONLY to Fleet Management.'
+                        : 'No Fleet PIN configured. Set a separate 4-digit PIN for your brother.'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {fleetPinHash && (
+                      <button className="btn btn-danger btn-sm" onClick={handleRemoveFleetPin}>
+                        Disable
+                      </button>
+                    )}
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowFleetPinInput(p => !p)}>
+                      {fleetPinHash ? 'Change Fleet PIN' : 'Set Fleet PIN'}
+                    </button>
+                  </div>
+                </div>
+
+                {showFleetPinInput && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid rgba(6,182,212,0.15)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <input
+                      className="form-input"
+                      type="password"
+                      maxLength={4}
+                      value={fleetPinInput}
+                      onChange={e => setFleetPinInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="Enter 4-digit PIN for brother"
+                      style={{ maxWidth: 220 }}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleSaveFleetPin(fleetPinInput)}
+                      disabled={fleetPinInput.length !== 4}
+                    >
+                      <Check size={14} /> Save PIN
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setShowFleetPinInput(false); setFleetPinInput(''); }}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                <div className="text-sm" style={{ marginTop: 10, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+                  🔒 <strong>Privacy Guarantee:</strong> When your brother logs in using this PIN, the Dashboard, Rooms, Rent Collection, Family Loans, SWP, Insurance Policies, and Bank details are completely hidden and inaccessible to him.
                 </div>
               </div>
 
