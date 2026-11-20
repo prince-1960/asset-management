@@ -73,7 +73,7 @@ export const saveRooms = (rooms) => {
 };
 
 // Investments
-export const getInvestments = () => get(KEYS.INVESTMENTS) || defaultInvestments();
+export const getInvestments = () => mergeInvestments(get(KEYS.INVESTMENTS));
 export const saveInvestments = (data) => {
   set(KEYS.INVESTMENTS, data);
   saveToCloud('investments', data);
@@ -116,8 +116,24 @@ function defaultInvestments() {
       payouts: {},
     },
     additionalInvestments: [],
+    policies: [],
+    portfolio: [],
   };
 }
+
+// Merge loaded investments with defaults so new keys are always present
+export const mergeInvestments = (loaded) => {
+  const def = defaultInvestments();
+  if (!loaded) return def;
+  return {
+    ...def,
+    ...loaded,
+    policies: loaded.policies || [],
+    portfolio: loaded.portfolio || [],
+    additionalInvestments: loaded.additionalInvestments || [],
+    swp: { ...def.swp, ...(loaded.swp || {}) },
+  };
+};
 
 // ID generator
 export const genId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
