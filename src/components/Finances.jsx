@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import {
   genId, formatDate, formatCurrency, currentMonthKey, monthLabel,
-  getLast12Months, daysUntil
+  getLast12Months, daysUntil, isPolicyDueInMonth
 } from '../utils/storage';
 
 const getOrdinal = (n) => {
@@ -779,35 +779,37 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         }
       });
 
-      // 2. Policy Premiums falling in this specific month
+      // 2. Policy Premiums falling in this specific month (Excludes One-Time policies already paid, finished PPT, and already paid in this month)
       let policyPremiumsTotal = 0;
       const policiesDueThisMonth = [];
       (investments?.policies || []).forEach(p => {
-        if (p.status !== 'Active' || !p.premiumAmount) return;
-        const freq = p.premiumFrequency || 'Yearly';
-        const start = p.startDate ? new Date(p.startDate) : null;
-        const [targetY, targetM] = monthKey.split('-').map(Number);
-
-        let fallsDue = false;
-        if (p.nextDueDate && p.nextDueDate.startsWith(monthKey)) {
-          fallsDue = true;
-        } else if (p.nextDueDate) {
-          const [ndY, ndM] = p.nextDueDate.split('-').map(Number);
-          const diffMonths = (targetY - ndY) * 12 + (targetM - ndM);
-          const interval = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[freq] || 12;
-          if (diffMonths >= 0 && diffMonths % interval === 0) fallsDue = true;
-        } else if (start) {
-          const diffMonths = (targetY - start.getFullYear()) * 12 + (targetM - (start.getMonth() + 1));
-          if (diffMonths >= 0) {
-            const interval = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[freq] || 12;
-            if (diffMonths % interval === 0) fallsDue = true;
-          }
-        }
-
-        if (fallsDue) {
-          const amt = Number(p.premiumAmount);
+        if (isPolicyDueInMonth(p, monthKey)) {
+          const amt = Number(p.premiumAmount || 0);
           policyPremiumsTotal += amt;
-          policiesDueThisMonth.push({ name: p.policyName || p.insurer, amount: amt, holder: p.holderName });
+          policiesDueThisMonth.push({
+            name: p.policyName || p.insurer,
+            policyNumber: p.policyNumber,
+            amount: amt,
+            holder: p.holderName
+          });
+        }
+      });
+
+      // 2b. Health Insurance Premiums falling in this specific month
+      (investments?.healthInsurance || []).forEach(h => {
+        const healthWithDue = {
+          ...h,
+          nextDueDate: h.nextDueDate || h.expiryDate
+        };
+        if (isPolicyDueInMonth(healthWithDue, monthKey)) {
+          const amt = Number(h.premiumAmount || 0);
+          policyPremiumsTotal += amt;
+          policiesDueThisMonth.push({
+            name: `${h.policyName || h.insurer} (Health)`,
+            policyNumber: h.policyNumber,
+            amount: amt,
+            holder: h.holderName || h.coveredMembers || 'Self'
+          });
         }
       });
 
@@ -1037,7 +1039,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                       <div className="flex gap-12 flex-wrap">
                         {p.policiesDueThisMonth.map((pol, pi) => (
                           <span key={`${pol.name}-${pi}`} className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                            • <strong>{pol.name}</strong> ({pol.holder || 'Self'}): <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>{formatCurrency(pol.amount)}</span>
+                            • <strong>{pol.name}</strong>{pol.policyNumber ? <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--accent-blue)', marginLeft: 4 }}>#{pol.policyNumber}</span> : ''} ({pol.holder || 'Self'}): <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>{formatCurrency(pol.amount)}</span>
                           </span>
                         ))}
                       </div>

@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   daysUntil, formatDate, formatCurrency, currentMonthKey, monthLabel,
-  calculatePendingLoan, getRemainingMonthsCount, getLast12Months
+  calculatePendingLoan, getRemainingMonthsCount, getLast12Months, isPolicyDueInMonth
 } from '../utils/storage';
 
 const DOC_LABELS = { insurance: 'Insurance', puc: 'PUC', fitness: 'Fitness', permit: 'Permit' };
@@ -198,12 +198,22 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
     let policyDueTotal = 0;
     const duePolicies = [];
     (investments?.policies || []).forEach(p => {
-      if (p.status !== 'Active') return;
-      const due = p.nextDueDate;
-      if (due && due.startsWith(thisMonth)) {
+      if (isPolicyDueInMonth(p, thisMonth)) {
         const amt = Number(p.premiumAmount || 0);
         policyDueTotal += amt;
-        duePolicies.push({ name: p.policyName || p.insurer, amount: amt, due });
+        duePolicies.push({ name: p.policyName || p.insurer, policyNumber: p.policyNumber, amount: amt, due: p.nextDueDate });
+      }
+    });
+
+    (investments?.healthInsurance || []).forEach(h => {
+      const healthWithDue = {
+        ...h,
+        nextDueDate: h.nextDueDate || h.expiryDate
+      };
+      if (isPolicyDueInMonth(healthWithDue, thisMonth)) {
+        const amt = Number(h.premiumAmount || 0);
+        policyDueTotal += amt;
+        duePolicies.push({ name: `${h.policyName || h.insurer} (Health)`, policyNumber: h.policyNumber, amount: amt, due: healthWithDue.nextDueDate });
       }
     });
 

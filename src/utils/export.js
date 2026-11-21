@@ -222,6 +222,30 @@ export const exportToExcel = (vehicles, rooms, investments, finances) => {
     XLSX.utils.book_append_sheet(wb, ws7, 'Insurance Policies');
   }
 
+  // ── Sheet 7b: Health Insurance ──────────────────────────────────────────
+  const healthRows = (investments?.healthInsurance || []).map(h => ({
+    'Plan Name': h.policyName || '',
+    'Policy Number': h.policyNumber || '',
+    Insurer: h.insurer || '',
+    'Plan Type': h.planType || '',
+    'Covered Members': h.coveredMembers || '',
+    'Proposer': h.holderName || '',
+    'Hospitalization Sum Insured (₹)': h.sumInsured || h.sumAssured || '',
+    'Bonus Cover (₹)': h.bonusCover || '',
+    'Premium Amount (₹)': h.premiumAmount || '',
+    'Frequency': h.premiumFrequency || 'Yearly',
+    'Renewal / Expiry Date': formatDate(h.expiryDate || h.nextDueDate),
+    'Room Rent Limit': h.roomRentLimit || '',
+    'Copay / Deductible': h.copay || '',
+    'TPA / Helpline': h.cashlessContact || '',
+    Status: h.status || 'Active',
+    Notes: h.notes || '',
+  }));
+  if (healthRows.length) {
+    const ws7b = XLSX.utils.json_to_sheet(healthRows);
+    XLSX.utils.book_append_sheet(wb, ws7b, 'Health Insurance');
+  }
+
   // ── Sheet 8: Portfolio ─────────────────────────────────────────────────
   const portfolioRows = (investments?.portfolio || []).map(p => {
     const c = calculateCumulativeInvestment({
@@ -282,6 +306,24 @@ export const exportToExcel = (vehicles, rooms, investments, finances) => {
   if (loanRows.length) {
     const ws10 = XLSX.utils.json_to_sheet(loanRows);
     XLSX.utils.book_append_sheet(wb, ws10, 'Loans Given (Lending)');
+  }
+
+  // ── Sheet 10b: Policy Action Items & To-Do ───────────────────────────
+  const todoRows = (investments?.policyTodos || []).map(t => ({
+    'Task Title': t.title || '',
+    'Linked Policy': t.policyName || '',
+    'Policy #': t.policyNumber || '',
+    Insurer: t.insurer || '',
+    Category: t.category || '',
+    Priority: t.priority || '',
+    'Due Date': t.dueDate ? formatDate(t.dueDate) : '',
+    Status: t.isCompleted ? 'Completed' : 'Pending',
+    'Completed At': t.completedAt ? formatDate(t.completedAt) : '',
+    Details: t.description || '',
+  }));
+  if (todoRows.length) {
+    const ws10b = XLSX.utils.json_to_sheet(todoRows);
+    XLSX.utils.book_append_sheet(wb, ws10b, 'Policy Action Items');
   }
 
   // ── Sheet 11: Rent & Recurring Expenses ───────────────────────────────

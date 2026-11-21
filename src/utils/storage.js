@@ -141,8 +141,10 @@ function defaultInvestments() {
     },
     additionalInvestments: [],
     policies: [],
+    healthInsurance: [],
     portfolio: [],
     loansGiven: [],
+    policyTodos: [],
   };
 }
 
@@ -150,12 +152,34 @@ function defaultInvestments() {
 export const mergeInvestments = (loaded) => {
   const def = defaultInvestments();
   if (!loaded) return def;
+
+  const rawPolicies = loaded.policies || [];
+  const existingHealth = loaded.healthInsurance || [];
+
+  // Automatically migrate any policies with type === 'Health' into the dedicated healthInsurance collection
+  const healthFromPolicies = rawPolicies.filter(p => p.type === 'Health');
+  const nonHealthPolicies = rawPolicies.filter(p => p.type !== 'Health');
+
+  const combinedHealth = [...existingHealth];
+  healthFromPolicies.forEach(hp => {
+    if (!combinedHealth.some(h => h.id === hp.id || (h.policyNumber && h.policyNumber === hp.policyNumber))) {
+      combinedHealth.push({
+        ...hp,
+        sumInsured: hp.sumInsured || hp.sumAssured || '',
+        expiryDate: hp.expiryDate || hp.nextDueDate || hp.maturityDate || '',
+        planType: hp.planType || 'Family Floater',
+      });
+    }
+  });
+
   return {
     ...def,
     ...loaded,
-    policies: loaded.policies || [],
+    policies: nonHealthPolicies,
+    healthInsurance: combinedHealth,
     portfolio: loaded.portfolio || [],
     loansGiven: loaded.loansGiven || [],
+    policyTodos: loaded.policyTodos || [],
     additionalInvestments: loaded.additionalInvestments || [],
     swp: { ...def.swp, ...(loaded.swp || {}) },
   };
@@ -274,6 +298,18 @@ export const calculatePendingLoan = (emi) => {
   return 0;
 };
 
+export const isNomineeNeedUpdate = (nominee) => {
+  if (!nominee) return false;
+  const n = String(nominee).trim().toLowerCase();
+  return n.includes('need to update') || n.includes('needs update') || n.includes('to update') || n === 'update';
+};
+
+export const isPhoneNeedUpdate = (phone) => {
+  if (!phone) return false;
+  const digits = String(phone).replace(/\D/g, '');
+  return digits.endsWith('8960009911');
+};
+
 export const formatCurrency = (amount) => {
   const n = Number(amount);
   if (amount === null || amount === undefined || amount === '' || isNaN(n)) return '—';
@@ -287,6 +323,47 @@ export const addYearsToDate = (dateStr, years) => {
   if (isNaN(d.getTime())) return '';
   d.setFullYear(d.getFullYear() + Number(years));
   return d.toISOString().split('T')[0];
+};
+
+/**
+ * Calculates the date of the FINAL installment for a given paying term.
+ * E.g., Starting 2021 with PPT = 5 years (Yearly):
+ * 5 installments are paid in 2021, 2022, 2023, 2024, 2025.
+ * The final payment date is in 2025 (not 2026).
+ */
+export const calculateLastPaymentDate = (startDateStr, payingTermYears, frequency = 'Yearly') => {
+  if (!startDateStr || !payingTermYears || isNaN(payingTermYears)) return '';
+  const pYears = Number(payingTermYears);
+  if (pYears <= 0) return '';
+
+  const intervalMonths = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[frequency] || 12;
+  const installmentsPerYear = 12 / intervalMonths;
+  const totalInstallments = Math.round(pYears * installmentsPerYear);
+  if (totalInstallments <= 1) return startDateStr;
+
+  const d = new Date(startDateStr);
+  if (isNaN(d.getTime())) return '';
+  // The last installment is at (totalInstallments - 1) intervals
+  d.setMonth(d.getMonth() + (totalInstallments - 1) * intervalMonths);
+  return d.toISOString().split('T')[0];
+};
+
+/**
+ * Derives paying term (in years) from start date and final payment date.
+ * E.g., Start 2021, Last payment 2025 -> 5 installments = 5 years PPT.
+ */
+export const getPayingTermFromDates = (startDateStr, paymentEndDateStr, frequency = 'Yearly') => {
+  if (!startDateStr || !paymentEndDateStr) return '';
+  const d1 = new Date(startDateStr);
+  const d2 = new Date(paymentEndDateStr);
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return '';
+
+  const intervalMonths = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[frequency] || 12;
+  const monthsDiff = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+  const installmentsCount = Math.round(monthsDiff / intervalMonths) + 1;
+  const installmentsPerYear = 12 / intervalMonths;
+  const termYears = Math.round((installmentsCount / installmentsPerYear) * 10) / 10;
+  return termYears > 0 ? termYears : 1;
 };
 
 export const getYearsDifference = (startDateStr, endDateStr) => {
@@ -310,7 +387,7 @@ export const calculatePolicyTimeline = ({
   totalPaid
 }) => {
   const pTerm = Number(policyTerm) || (startDate && maturityDate ? getYearsDifference(startDate, maturityDate) : null);
-  const payTerm = Number(payingTerm) || (startDate && paymentEndDate ? getYearsDifference(startDate, paymentEndDate) : null);
+  const payTerm = Number(payingTerm) || (startDate && paymentEndDate ? getPayingTermFromDates(startDate, paymentEndDate, frequency) : null);
 
   const amt = Number(amount) || 0;
   const intervalMonths = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[frequency] || 12;
@@ -320,9 +397,10 @@ export const calculatePolicyTimeline = ({
   const totalCommitment = totalInstallments && amt ? totalInstallments * amt : null;
 
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setHours(23, 59, 59, 999);
 
-  const calcEndDate = paymentEndDate || (startDate && payTerm ? addYearsToDate(startDate, payTerm) : '');
+  // Last payment date (e.g. 2021 + 5 yrs PPT -> 2025)
+  const calcEndDate = paymentEndDate || (startDate && payTerm ? calculateLastPaymentDate(startDate, payTerm, frequency) : '');
   const calcMaturityDate = maturityDate || (startDate && pTerm ? addYearsToDate(startDate, pTerm) : '');
 
   let isPremiumCompleted = false;
@@ -330,6 +408,7 @@ export const calculatePolicyTimeline = ({
 
   if (calcEndDate) {
     const end = new Date(calcEndDate);
+    end.setHours(23, 59, 59, 999);
     if (!isNaN(end.getTime())) {
       isPremiumCompleted = end <= today;
       daysUntilPayEnd = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
@@ -342,6 +421,7 @@ export const calculatePolicyTimeline = ({
 
   if (calcMaturityDate) {
     const mat = new Date(calcMaturityDate);
+    mat.setHours(23, 59, 59, 999);
     if (!isNaN(mat.getTime())) {
       isMatured = mat <= today;
       daysUntilMaturity = Math.ceil((mat - today) / (1000 * 60 * 60 * 24));
@@ -419,6 +499,7 @@ export const calculateCumulativeInvestment = ({
   let endLimit = today;
   if (stopStr) {
     const end = new Date(stopStr);
+    end.setHours(23, 59, 59, 999);
     if (!isNaN(end.getTime()) && end < today) {
       endLimit = end;
     }
@@ -454,3 +535,69 @@ export const calculateCumulativeInvestment = ({
     label
   };
 };
+
+// ── Check if a policy premium falls due in a specific year-month (YYYY-MM) ─────
+export function isPolicyDueInMonth(policy, monthKey) {
+  if (!policy || policy.status !== 'Active' || !policy.premiumAmount) return false;
+
+  const freq = policy.premiumFrequency || 'Yearly';
+  const isOneTime = freq === 'One-Time' || freq === 'Single Premium' || freq === 'One-time';
+
+  // 1. If premium for this specific month is already marked as 'Paid', it is NOT due
+  if (policy.paymentHistory?.[monthKey]?.status === 'Paid') {
+    return false;
+  }
+
+  // 2. If it's a One-Time policy
+  if (isOneTime) {
+    // If it has already been paid (marked Paid in paymentHistory, alreadyPaid set, or status is Paid Up)
+    const hasAnyPaidHistory = policy.paymentHistory && Object.values(policy.paymentHistory).some(h => h?.status === 'Paid');
+    if (hasAnyPaidHistory || Number(policy.alreadyPaid) > 0 || policy.status === 'Paid Up') {
+      return false;
+    }
+    // If startDate is in a previous month, a one-time policy premium was already paid at inception
+    if (policy.startDate) {
+      const startMonth = policy.startDate.slice(0, 7);
+      if (monthKey > startMonth) {
+        return false;
+      }
+    }
+    // If not paid yet, it only falls due in the exact month matching nextDueDate or startDate
+    const dueMatch = (policy.nextDueDate && policy.nextDueDate.startsWith(monthKey)) ||
+                     (!policy.nextDueDate && policy.startDate && policy.startDate.startsWith(monthKey));
+    return Boolean(dueMatch);
+  }
+
+  // 3. If policy has a premium payment end date (PPT limit) and this month is after that end date
+  if (policy.paymentEndDate) {
+    const endMonthKey = policy.paymentEndDate.slice(0, 7);
+    if (monthKey > endMonthKey) {
+      return false;
+    }
+  }
+
+  // 4. Check recurrence based on interval
+  const intervalMap = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 };
+  const interval = intervalMap[freq];
+  if (!interval) return false;
+
+  const [targetY, targetM] = monthKey.split('-').map(Number);
+
+  if (policy.nextDueDate) {
+    const [ndY, ndM] = policy.nextDueDate.split('-').map(Number);
+    const diffMonths = (targetY - ndY) * 12 + (targetM - ndM);
+    if (policy.nextDueDate.startsWith(monthKey)) return true;
+    if (diffMonths > 0 && diffMonths % interval === 0) return true;
+    return false;
+  }
+
+  if (policy.startDate) {
+    const start = new Date(policy.startDate);
+    if (!isNaN(start.getTime())) {
+      const diffMonths = (targetY - start.getFullYear()) * 12 + (targetM - (start.getMonth() + 1));
+      if (diffMonths >= 0 && diffMonths % interval === 0) return true;
+    }
+  }
+
+  return false;
+}
