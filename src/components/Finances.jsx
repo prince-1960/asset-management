@@ -1,12 +1,10 @@
 import { useState, useMemo } from 'react';
 import {
   CreditCard, IndianRupee, TrendingUp, Calendar, AlertTriangle,
-  Plus, Edit2, Trash2, Check, X, UploadCloud, FileText,
+  Plus, Edit2, Trash2, Check, X,
   PieChart, ArrowUpRight, ArrowDownRight, Sparkles, Shield,
-  Clock, DollarSign, Wallet, ShoppingBag, Utensils, Film, Car, Zap, HeartPulse
+  Clock, DollarSign, Wallet
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
-import { extractTextFromPdf } from '../utils/pdfParser';
 import {
   genId, formatDate, formatCurrency, currentMonthKey, monthLabel,
   getLast12Months, daysUntil
@@ -30,54 +28,6 @@ const BANKS = [
   'HDFC Bank', 'ICICI Bank', 'SBI Card', 'Axis Bank', 'Kotak Mahindra',
   'American Express', 'Standard Chartered', 'RBL Bank', 'IDFC First Bank', 'OneCard', 'Other'
 ];
-
-// ─── Category Dictionary & Rules ──────────────────────────────────────────────
-const CATEGORIES = [
-  { id: 'Food', label: 'Food & Dining', icon: Utensils, color: '#f59e0b' },
-  { id: 'Shopping', label: 'Shopping & E-Commerce', icon: ShoppingBag, color: '#8b5cf6' },
-  { id: 'Entertainment', label: 'Entertainment & Subs', icon: Film, color: '#ec4899' },
-  { id: 'Travel', label: 'Travel & Commute', icon: Car, color: '#3b82f6' },
-  { id: 'Utilities', label: 'Bills & Utilities', icon: Zap, color: '#06b6d4' },
-  { id: 'Health', label: 'Health & Medical', icon: HeartPulse, color: '#10b981' },
-  { id: 'Investment', label: 'Investments & Savings', icon: TrendingUp, color: '#6366f1' },
-  { id: 'General', label: 'Transfers & Others', icon: Wallet, color: '#64748b' },
-];
-
-function categorizeDescription(desc = '') {
-  const d = desc.toLowerCase();
-
-  // Food
-  if (/zomato|swiggy|blinkit|zepto|mcdonald|starbucks|domino|pizza|burger|restaur|cafe|food|dining|instamart|dunzo|biryani|subway|haldiram/.test(d)) {
-    const isWaste = /zomato|swiggy|starbucks|burger|pizza|mcdonald/.test(d);
-    return { category: 'Food', isWaste };
-  }
-  // Shopping
-  if (/amazon|flipkart|myntra|ajio|nykaa|zara|h&m|retail|cloth|store|mall|meesho|decathlon|tata cliq|relianceretail/.test(d)) {
-    return { category: 'Shopping', isWaste: /myntra|zara|h&m|meesho|ajio/.test(d) };
-  }
-  // Entertainment
-  if (/netflix|spotify|prime|hotstar|youtube|bookmyshow|pvr|inox|apple|google play|sonyliv|zee5|gaming|steam|disney/.test(d)) {
-    return { category: 'Entertainment', isWaste: true };
-  }
-  // Travel
-  if (/uber|ola|rapido|makemytrip|cleartrip|yatra|indigo|air india|irctc|fastag|petrol|fuel|hpcl|bpcl|indianoil|shell|toll/.test(d)) {
-    return { category: 'Travel', isWaste: false };
-  }
-  // Utilities
-  if (/electric|bescom|tata power|airtel|jio|vi |vodafone|act |broadband|water|gas|igl|adani gas|recharge|dth|billpay/.test(d)) {
-    return { category: 'Utilities', isWaste: false };
-  }
-  // Health
-  if (/apollo|pharmeasy|1mg|netmeds|hospital|clinic|pharmacy|medplus|pathology|diagnostic/.test(d)) {
-    return { category: 'Health', isWaste: false };
-  }
-  // Investments
-  if (/zerodha|groww|upstox|cred|emi|loan|mutual fund|sip|insurance|lic|ppf|nps/.test(d)) {
-    return { category: 'Investment', isWaste: false };
-  }
-
-  return { category: 'General', isWaste: false };
-}
 
 // ─── Modal: Add/Edit Credit Card ──────────────────────────────────────────────
 function CardModal({ card, onSave, onClose }) {
@@ -282,16 +232,20 @@ function CardEmiModal({ onSave, onClose }) {
 
 // ─── Main Component: Finances ─────────────────────────────────────────────────
 export default function Finances({ finances = {}, updateFinances, vehicles = [], investments = {} }) {
-  const [tab, setTab] = useState('projection'); // 'projection' | 'cards' | 'salary' | 'statements'
+  const [tab, setTab] = useState('projection'); // 'projection' | 'cards' | 'salary'
   const [modal, setModal] = useState(null); // { type: 'card', card } | { type: 'emi', cardId }
-  const [rawText, setRawText] = useState('');
-  const [statementFilter, setStatementFilter] = useState('ALL');
 
   const creditCards = finances.creditCards || [];
   const salary = finances.salary || { amount: 0, company: '', payDay: 1, history: {} };
-  const expenses = finances.expenses || [];
   const thisMonth = currentMonthKey();
   const months12 = getLast12Months();
+
+  // Purge any corrupted/legacy parsed expenses so strange numbers are cleared
+  useMemo(() => {
+    if (finances.expenses && finances.expenses.length > 0) {
+      setTimeout(() => updateFinances({ ...finances, expenses: [] }), 0);
+    }
+  }, []);
 
   // ── Credit Cards Calculations ─────────────────────────────────────────
   const totalLimit = creditCards.reduce((s, c) => s + Number(c.totalLimit || 0), 0);
@@ -369,141 +323,6 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
       }
     });
   };
-
-  // ── Statement Parser Engine (PDF, CSV, Excel, Text) ───────────────────
-  const parseStatementRawLines = (text) => {
-    if (!text) return [];
-    const lines = text.split('\n');
-    const parsed = [];
-
-    lines.forEach(line => {
-      line = line.trim();
-      if (!line || line.length < 5) return;
-      if (/^(date|transaction|sl\.? no|details|narration|description|reference|chq|ref|balance|opening|closing)\b/i.test(line)) return;
-
-      // 1. Extract Date
-      let date = '';
-      const dateMatch = line.match(/\b(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.\s]+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\/\-\.\s]+\d{2,4})\b/i);
-      if (dateMatch) {
-        date = dateMatch[0];
-        line = line.replace(dateMatch[0], ' ').trim();
-      }
-
-      // 2. Extract Amount (look for amounts like 1,250.00 or 450)
-      const amounts = [];
-      const numRegex = /(?:(?:₹|rs\.?|inr)\s*)?([\d,]+\.\d{2}|[\d,]+(?:\.\d+)?)/gi;
-      let nm;
-      while ((nm = numRegex.exec(line)) !== null) {
-        const rawVal = nm[1].replace(/,/g, '');
-        const val = parseFloat(rawVal);
-        if (!isNaN(val) && val > 0 && (nm[1].includes('.') || val >= 10)) {
-          amounts.push({ match: nm[0], val });
-        }
-      }
-
-      if (amounts.length === 0) return;
-
-      const targetAmount = amounts[amounts.length - 1];
-      let cleanDesc = line
-        .replace(targetAmount.match, ' ')
-        .replace(/\s+(dr|cr|debit|credit)\b/gi, '')
-        .replace(/[\s\t]+/g, ' ')
-        .trim();
-
-      cleanDesc = cleanDesc.replace(/^\d+\s+/, '').replace(/\s+[A-Z0-9]{12,}$/, '').trim();
-      if (!cleanDesc || cleanDesc.length < 2) cleanDesc = 'Bank Transaction';
-
-      const { category, isWaste } = categorizeDescription(cleanDesc);
-      parsed.push({
-        id: genId(),
-        date: date || new Date().toISOString().split('T')[0],
-        description: cleanDesc,
-        amount: targetAmount.val,
-        category,
-        isWaste
-      });
-    });
-
-    return parsed;
-  };
-
-  const processParsedTransactions = (items) => {
-    if (!items.length) {
-      alert('No valid debit transactions could be parsed from the file.');
-      return;
-    }
-    const newExpenses = [...items, ...expenses];
-    updateFinances({ ...finances, expenses: newExpenses });
-    alert(`Successfully parsed & categorized ${items.length} transactions!`);
-  };
-
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
-
-    if (isPdf) {
-      try {
-        const buffer = await file.arrayBuffer();
-        const text = await extractTextFromPdf(buffer);
-        const parsed = parseStatementRawLines(text);
-        processParsedTransactions(parsed);
-      } catch (err) {
-        alert(err.message || 'Could not parse PDF statement. Ensure it is not locked or paste transaction text below.');
-      }
-      e.target.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const data = new Uint8Array(evt.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const csv = XLSX.utils.sheet_to_csv(firstSheet);
-        const parsed = parseStatementRawLines(csv);
-        processParsedTransactions(parsed);
-      } catch (err) {
-        alert('Could not parse statement file. Try uploading standard CSV/XLSX or paste text below.');
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    e.target.value = '';
-  };
-
-  const handleParseRawText = () => {
-    if (!rawText.trim()) return;
-    const parsed = parseStatementRawLines(rawText);
-    if (parsed.length) {
-      processParsedTransactions(parsed);
-      setRawText('');
-    } else {
-      alert('Could not detect transactions. Ensure each line has a description and amount.');
-    }
-  };
-
-  const toggleWaste = (id) => {
-    const updated = expenses.map(e => e.id === id ? { ...e, isWaste: !e.isWaste } : e);
-    updateFinances({ ...finances, expenses: updated });
-  };
-
-  const deleteExpense = (id) => {
-    updateFinances({ ...finances, expenses: expenses.filter(e => e.id !== id) });
-  };
-
-  const clearAllExpenses = () => {
-    if (confirm('Clear all parsed statement expenses?')) {
-      updateFinances({ ...finances, expenses: [] });
-    }
-  };
-
-  // ── Expense & Waste Analytics ─────────────────────────────────────────
-  const totalParsedSpend = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const wastedExpenses = expenses.filter(e => e.isWaste);
-  const totalWastedSpend = wastedExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const wastedPct = totalParsedSpend > 0 ? Math.round((totalWastedSpend / totalParsedSpend) * 100) : 0;
 
   // ── 6-MONTH FORWARD PROJECTION ENGINE ─────────────────────────────────
   const futureMonths = useMemo(() => {
@@ -641,13 +460,6 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         >
           <IndianRupee size={14} style={{ display: 'inline', marginRight: 6 }} />
           Salary &amp; Income Tracker
-        </button>
-        <button
-          className={`tab ${tab === 'statements' ? 'active' : ''}`}
-          onClick={() => setTab('statements')}
-        >
-          <FileText size={14} style={{ display: 'inline', marginRight: 6 }} />
-          Statement Parser &amp; Waste Audit
         </button>
       </div>
 
@@ -1011,148 +823,6 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── TAB 4: STATEMENT PARSER & WASTE AUDIT ────────────────────── */}
-      {tab === 'statements' && (
-        <div>
-          {/* Waste Alert Banner */}
-          <div className="grid-cols-3 gap-12 mb-20">
-            <div className="stat-card">
-              <div className="stat-label">Total Analyzed Spend</div>
-              <div className="stat-value">{formatCurrency(totalParsedSpend)}</div>
-              <div className="stat-sub">{expenses.length} parsed transactions</div>
-            </div>
-
-            <div className="stat-card" style={{ background: totalWastedSpend > 0 ? 'rgba(239, 68, 68, 0.08)' : undefined }}>
-              <div className="stat-label">Money Leakage / Wasted Spend</div>
-              <div className="stat-value" style={{ color: totalWastedSpend > 0 ? 'var(--accent-red)' : 'var(--accent-green)' }}>
-                {formatCurrency(totalWastedSpend)}
-              </div>
-              <div className="stat-sub">{wastedPct}% of analyzed expenses</div>
-            </div>
-
-            <div className="stat-card">
-              <div className="stat-label">Wasted Expense Count</div>
-              <div className="stat-value" style={{ color: 'var(--accent-amber)' }}>
-                {wastedExpenses.length} items
-              </div>
-              <div className="stat-sub">Flagged food deliveries, impulsive shopping, subs</div>
-            </div>
-          </div>
-
-          {/* Upload & Parse Box */}
-          <div className="card mb-20">
-            <div className="section-header mb-12">
-              <div>
-                <div className="section-title">📤 Upload Bank / Credit Card Statement</div>
-                <div className="section-subtitle">Auto-categorizes transactions and flags money leaks (Zomato, subscriptions, shopping)</div>
-              </div>
-              {expenses.length > 0 && (
-                <button className="btn btn-danger btn-sm" onClick={clearAllExpenses}>
-                  Clear History
-                </button>
-              )}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {/* File Upload */}
-              <label className="upload-area" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'pointer', borderRadius: 'var(--radius-md)' }}>
-                <UploadCloud size={32} color="var(--accent-indigo)" style={{ marginBottom: 8 }} />
-                <div style={{ fontWeight: 600 }}>Click to Upload Statement</div>
-                <div className="text-sm text-muted">Supports .PDF, .CSV, or .XLSX bank &amp; card statements</div>
-                <input type="file" accept=".pdf, .csv, .xlsx, .xls" onChange={handleFileUpload} style={{ display: 'none' }} />
-              </label>
-
-              {/* Raw Text Box */}
-              <div>
-                <div className="text-sm text-secondary mb-4">Or paste transaction SMS / statement text:</div>
-                <textarea
-                  className="form-input"
-                  value={rawText}
-                  onChange={e => setRawText(e.target.value)}
-                  placeholder="Paste lines like:&#10;Zomato Order ₹620&#10;Amazon Shopping 2499.00&#10;Uber Ride 380"
-                  style={{ minHeight: 70 }}
-                />
-                <button className="btn btn-secondary btn-sm mt-8 w-full" onClick={handleParseRawText} disabled={!rawText.trim()}>
-                  Parse &amp; Categorize Text
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Transactions List with Waste Filter */}
-          {expenses.length > 0 && (
-            <div className="card">
-              <div className="flex justify-between items-center mb-14 flex-wrap gap-10">
-                <div className="flex gap-8 items-center">
-                  <span className="text-sm text-secondary">Filter:</span>
-                  <button
-                    className={`btn btn-sm ${statementFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => setStatementFilter('ALL')}
-                  >
-                    All ({expenses.length})
-                  </button>
-                  <button
-                    className={`btn btn-sm ${statementFilter === 'WASTE' ? 'btn-danger' : 'btn-secondary'}`}
-                    onClick={() => setStatementFilter('WASTE')}
-                  >
-                    ⚠️ Wasted Spend Only ({wastedExpenses.length})
-                  </button>
-                </div>
-
-                <span className="text-sm text-muted">
-                  Tip: Click the ⚠️ icon on any transaction to tag or untag money wasters.
-                </span>
-              </div>
-
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Category</th>
-                      <th>Description</th>
-                      <th>Amount</th>
-                      <th>Waste Audit</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(statementFilter === 'WASTE' ? wastedExpenses : expenses).map(e => (
-                      <tr key={e.id}>
-                        <td>{formatDate(e.date)}</td>
-                        <td>
-                          <span className="badge badge-purple">{e.category}</span>
-                        </td>
-                        <td style={{ fontWeight: 500 }}>{e.description}</td>
-                        <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                          {formatCurrency(e.amount)}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            className={`btn btn-sm ${e.isWaste ? 'btn-danger' : 'btn-secondary'}`}
-                            onClick={() => toggleWaste(e.id)}
-                            style={{ padding: '3px 8px', fontSize: 11 }}
-                            title="Toggle Wasted/Impulsive Spend"
-                          >
-                            {e.isWaste ? '⚠️ Wasted' : '✓ Normal'}
-                          </button>
-                        </td>
-                        <td>
-                          <button className="btn btn-secondary btn-icon btn-sm" onClick={() => deleteExpense(e.id)}>
-                            <Trash2 size={12} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             </div>
           )}

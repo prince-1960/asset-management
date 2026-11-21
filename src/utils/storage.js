@@ -168,7 +168,6 @@ function defaultFinances() {
       history: {},
     },
     creditCards: [],
-    expenses: [],
   };
 }
 
@@ -180,7 +179,6 @@ export const mergeFinances = (loaded) => {
     ...loaded,
     salary: { ...def.salary, ...(loaded.salary || {}) },
     creditCards: loaded.creditCards || [],
-    expenses: loaded.expenses || [],
   };
 };
 

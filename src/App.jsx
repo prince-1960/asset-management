@@ -331,7 +331,7 @@ export default function App() {
     fleet:       { title: 'Fleet Management', subtitle: `${vehicles.length} vehicles tracked` },
     rooms:       { title: 'Property & Rooms', subtitle: `${rooms.length} room${rooms.length !== 1 ? 's' : ''} managed` },
     investments: { title: 'Investments', subtitle: 'SWP & portfolio tracking' },
-    finances:    { title: 'Expenses & Cards', subtitle: 'Upcoming expense projections, salary, credit cards & statement audit' },
+    finances:    { title: 'Expenses & Cards', subtitle: 'Upcoming 6-month expense projections, salary & credit cards' },
   };
 
   return (
