@@ -3033,6 +3033,7 @@ export default function Investments({ investments, updateInvestments }) {
 
   // Pure Life / Term Protection Cover (not counting health)
   const totalLifeSumAssured = policies.reduce((sum, p) => sum + Number(p.sumAssured || 0), 0);
+  const totalSumAssured = totalLifeSumAssured;
   const totalPortfolioVal = portfolio.reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
 
   const totalPortfolioInvested = portfolio.reduce((sum, item) => {
@@ -3425,7 +3426,7 @@ export default function Investments({ investments, updateInvestments }) {
                 <div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Protection Cover</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-green)' }}>
-                    {formatCurrency(totalSumAssured)}
+                    {formatCurrency(totalLifeSumAssured)}
                   </div>
                 </div>
               </div>
