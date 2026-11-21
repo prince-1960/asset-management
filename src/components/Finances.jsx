@@ -3,7 +3,8 @@ import {
   CreditCard, IndianRupee, TrendingUp, Calendar, AlertTriangle,
   Plus, Edit2, Trash2, Check, X,
   Clock, Wallet, Home, Receipt, Search,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, HeartHandshake, Users, ArrowDownLeft, Tag, Filter,
+  Landmark, RotateCcw
 } from 'lucide-react';
 import {
   genId, formatDate, formatCurrency, currentMonthKey, monthLabel,
@@ -602,13 +603,440 @@ function ExpenseCard({ expense, onEdit, onDelete, onTogglePaid }) {
   );
 }
 
+// ─── External Contributions Constants & Modal ─────────────────────────────────
+const blankContribution = () => ({
+  id: genId(),
+  contributor: '',
+  relation: 'Sister',
+  amount: '',
+  date: new Date().toISOString().split('T')[0],
+  contributionType: 'family_loan', // 'family_loan' | 'reimbursement' | 'gift'
+  purpose: 'Insurance Premium Help',
+  receivedVia: 'UPI (GPay / PhonePe / Paytm)',
+  referenceNo: '',
+  notes: '',
+  repaidAmount: 0,
+  repayments: [],
+  createdAt: new Date().toISOString()
+});
+
+const RELATIONS = [
+  'Sister',
+  'Brother-in-Law (BIL)',
+  'Brother',
+  'Parents',
+  'Father',
+  'Mother',
+  'In-Laws',
+  'Spouse',
+  'Relative / Cousin',
+  'Friend',
+  'Other'
+];
+
+const CONTRIBUTION_PURPOSES = [
+  'Insurance Premium Help',
+  'Vehicle Loan / EMI Help',
+  'House Rent / Maintenance',
+  'Credit Card Bill / EMI',
+  'Medical / Hospital Expenses',
+  'Household / Grocery Support',
+  'Emergency Fund / General Support',
+  'Gift / Festival',
+  'Other'
+];
+
+const PAYMENT_MODES = [
+  'UPI (GPay / PhonePe / Paytm)',
+  'Bank Transfer (IMPS / NEFT)',
+  'Cash',
+  'Cheque',
+  'Other'
+];
+
+const getRelationBadge = (relation = '') => {
+  const rel = (relation || '').toLowerCase();
+  if (rel.includes('sister')) return { bg: 'rgba(236, 72, 153, 0.15)', color: '#ec4899', border: 'rgba(236, 72, 153, 0.3)' };
+  if (rel.includes('bil') || rel.includes('brother-in-law')) return { bg: 'rgba(99, 102, 241, 0.15)', color: '#6366f1', border: 'rgba(99, 102, 241, 0.3)' };
+  if (rel.includes('brother')) return { bg: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', border: 'rgba(14, 165, 233, 0.3)' };
+  if (rel.includes('parent') || rel.includes('father') || rel.includes('mother')) return { bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981', border: 'rgba(16, 185, 129, 0.3)' };
+  if (rel.includes('friend')) return { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: 'rgba(245, 158, 11, 0.3)' };
+  return { bg: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', border: 'rgba(139, 92, 246, 0.3)' };
+};
+
+function ContributionModal({ contribution, onSave, onClose }) {
+  const [form, setForm] = useState(contribution || blankContribution());
+  const [selectedRel, setSelectedRel] = useState(
+    RELATIONS.slice(0, -1).includes(form.relation) ? form.relation : 'Other'
+  );
+  const [customRel, setCustomRel] = useState(
+    !RELATIONS.slice(0, -1).includes(form.relation) && form.relation ? form.relation : ''
+  );
+
+  const [selectedPurp, setSelectedPurp] = useState(
+    CONTRIBUTION_PURPOSES.slice(0, -1).includes(form.purpose) ? form.purpose : 'Other'
+  );
+  const [customPurp, setCustomPurp] = useState(
+    !CONTRIBUTION_PURPOSES.slice(0, -1).includes(form.purpose) && form.purpose ? form.purpose : ''
+  );
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = () => {
+    const finalRel = selectedRel === 'Other' ? (customRel.trim() || 'Other') : selectedRel;
+    const finalPurp = selectedPurp === 'Other' ? (customPurp.trim() || 'Other') : selectedPurp;
+    onSave({
+      ...form,
+      contributionType: form.contributionType || 'family_loan',
+      relation: finalRel,
+      purpose: finalPurp,
+      amount: Number(form.amount) || 0,
+      repaidAmount: Number(form.repaidAmount) || 0
+    });
+  };
+
+  const pending = Math.max(0, (Number(form.amount) || 0) - (Number(form.repaidAmount) || 0));
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <HeartHandshake size={18} color="var(--accent-indigo)" />
+            {contribution?.id ? 'Edit External Contribution' : 'Add External Contribution / Support'}
+          </div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="modal-body">
+          {/* Contribution Type Selection */}
+          <div className="form-group mb-16">
+            <label className="form-label" style={{ fontWeight: 600 }}>Why was this money sent?</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <div
+                onClick={() => set('contributionType', 'family_loan')}
+                style={{
+                  cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                  border: (form.contributionType || 'family_loan') === 'family_loan' ? '2px solid var(--accent-red)' : '1px solid var(--border-subtle)',
+                  background: (form.contributionType || 'family_loan') === 'family_loan' ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-base)'
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-red)' }}>
+                  🤝 Help with my stuff
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Family Loan (I owe this to family)
+                </div>
+              </div>
+
+              <div
+                onClick={() => set('contributionType', 'reimbursement')}
+                style={{
+                  cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                  border: form.contributionType === 'reimbursement' ? '2px solid var(--accent-blue)' : '1px solid var(--border-subtle)',
+                  background: form.contributionType === 'reimbursement' ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-base)'
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-blue)' }}>
+                  💳 Their own payment
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Used my CC / Reimbursed their bill
+                </div>
+              </div>
+
+              <div
+                onClick={() => set('contributionType', 'gift')}
+                style={{
+                  cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                  border: form.contributionType === 'gift' ? '2px solid var(--accent-green)' : '1px solid var(--border-subtle)',
+                  background: form.contributionType === 'gift' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-base)'
+                }}
+              >
+                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent-green)' }}>
+                  🎁 Gift / Support
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Pure help (No repayment needed)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Contributor / Person Name</label>
+              <input
+                className="form-input"
+                value={form.contributor}
+                onChange={e => set('contributor', e.target.value)}
+                placeholder="e.g. Pooja (Sister), Rajesh (BIL), Brother"
+                autoFocus
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Relationship</label>
+              <select
+                className="form-input"
+                value={selectedRel}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedRel(val);
+                  if (val !== 'Other') set('relation', val);
+                }}
+              >
+                {RELATIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              {selectedRel === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customRel}
+                  onChange={e => {
+                    setCustomRel(e.target.value);
+                    set('relation', e.target.value || 'Other');
+                  }}
+                  placeholder="Specify relationship..."
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Amount Received (₹)</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.amount}
+                onChange={e => set('amount', e.target.value)}
+                placeholder="e.g. 25000"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Date Received</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.date}
+                onChange={e => set('date', e.target.value)}
+              />
+            </div>
+          </div>
+
+          {/* Repaid Amount if Family Loan */}
+          {(form.contributionType || 'family_loan') === 'family_loan' && (
+            <div className="form-group mb-14" style={{ background: 'rgba(239, 68, 68, 0.05)', padding: 10, borderRadius: 'var(--radius-sm)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+              <label className="form-label" style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
+                Already Repaid Back to Family (₹)
+              </label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.repaidAmount || ''}
+                onChange={e => set('repaidAmount', e.target.value)}
+                placeholder="0 if nothing returned yet"
+              />
+              <div className="text-sm text-muted" style={{ marginTop: 4 }}>
+                Remaining family debt balance: <strong style={{ color: pending > 0 ? 'var(--accent-red)' : 'var(--accent-green)' }}>{formatCurrency(pending)}</strong>
+              </div>
+            </div>
+          )}
+
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Purpose / Helped With</label>
+              <select
+                className="form-input"
+                value={selectedPurp}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedPurp(val);
+                  if (val !== 'Other') set('purpose', val);
+                }}
+              >
+                {CONTRIBUTION_PURPOSES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              {selectedPurp === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customPurp}
+                  onChange={e => {
+                    setCustomPurp(e.target.value);
+                    set('purpose', e.target.value || 'Other');
+                  }}
+                  placeholder="Specify expense or purpose..."
+                />
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Payment Mode</label>
+              <select
+                className="form-input"
+                value={form.receivedVia}
+                onChange={e => set('receivedVia', e.target.value)}
+              >
+                {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Reference / UTR / Transaction ID (Optional)</label>
+            <input
+              className="form-input"
+              value={form.referenceNo}
+              onChange={e => set('referenceNo', e.target.value)}
+              placeholder="e.g. UPI Ref / IMPS / Cheque number"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Notes &amp; Details (Optional)</label>
+            <textarea
+              className="form-input"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="e.g. Sent specifically to help cover Tata AIG Car Insurance premium..."
+              style={{ minHeight: 60 }}
+            />
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!form.contributor?.trim() || !form.amount}
+          >
+            <Check size={14} /> Save Contribution
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: Record Repayment to Family ────────────────────────────────────────
+function RepaymentModal({ contribution, onSave, onClose }) {
+  const pending = Math.max(0, Number(contribution.amount || 0) - Number(contribution.repaidAmount || 0));
+  const [amount, setAmount] = useState(pending || '');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [mode, setMode] = useState('UPI (GPay / PhonePe / Paytm)');
+  const [notes, setNotes] = useState('');
+
+  const handleSave = () => {
+    const repayNum = Number(amount) || 0;
+    if (repayNum <= 0) return;
+    const newRepaid = Number(contribution.repaidAmount || 0) + repayNum;
+    const newHistory = [
+      ...(contribution.repayments || []),
+      {
+        id: genId(),
+        amount: repayNum,
+        date,
+        mode,
+        notes: notes.trim()
+      }
+    ];
+    onSave({
+      ...contribution,
+      repaidAmount: newRepaid,
+      repayments: newHistory
+    });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-md">
+        <div className="modal-header">
+          <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <RotateCcw size={18} color="var(--accent-green)" />
+            Record Repayment to {contribution.contributor}
+          </div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="modal-body">
+          <div style={{ background: 'var(--bg-base)', padding: 12, borderRadius: 'var(--radius-sm)', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+              <span className="text-muted">Total Borrowed:</span>
+              <strong>{formatCurrency(contribution.amount)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+              <span className="text-muted">Already Repaid:</span>
+              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>{formatCurrency(contribution.repaidAmount || 0)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, paddingTop: 4, borderTop: '1px solid var(--border-subtle)' }}>
+              <span>Remaining Balance:</span>
+              <strong style={{ color: 'var(--accent-red)' }}>{formatCurrency(pending)}</strong>
+            </div>
+          </div>
+
+          <div className="form-group mb-12">
+            <label className="form-label">Repayment Amount (₹)</label>
+            <input
+              className="form-input"
+              type="number"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              placeholder="e.g. 10000"
+              autoFocus
+            />
+          </div>
+
+          <div className="form-group mb-12">
+            <label className="form-label">Payment Date</label>
+            <input
+              className="form-input"
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+            />
+          </div>
+
+          <div className="form-group mb-12">
+            <label className="form-label">Payment Mode</label>
+            <select className="form-input" value={mode} onChange={e => setMode(e.target.value)}>
+              {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Notes (Optional)</label>
+            <input
+              className="form-input"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="e.g. Returned via GPay from salary"
+            />
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-success" onClick={handleSave} disabled={!amount || Number(amount) <= 0}>
+            <Check size={14} /> Record Repayment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component: Finances ─────────────────────────────────────────────────
 export default function Finances({ finances = {}, updateFinances, vehicles = [], investments = {} }) {
-  const [tab, setTab] = useState('projection'); // 'projection' | 'recurring' | 'cards' | 'salary'
-  const [modal, setModal] = useState(null); // { type: 'card', card } | { type: 'emi', cardId } | { type: 'expense', expense }
+  const [tab, setTab] = useState('projection'); // 'projection' | 'recurring' | 'cards' | 'contributions' | 'salary'
+  const [modal, setModal] = useState(null); // { type: 'card', card } | { type: 'emi', cardId } | { type: 'expense', expense } | { type: 'contribution', contribution }
 
   const creditCards = finances.creditCards || [];
   const recurringExpenses = finances.recurringExpenses || [];
+  const externalContributions = finances.externalContributions || [];
   const salary = finances.salary || { amount: 0, company: '', payDay: 1, history: {} };
   const thisMonth = currentMonthKey();
   const months12 = getLast12Months();
@@ -616,12 +1044,120 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
   const [expenseSearch, setExpenseSearch] = useState('');
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('');
 
+  // ── External Contributions Filter & Sort State ────────────────────────
+  const [contribSearch, setContribSearch] = useState('');
+  const [contribRelationFilter, setContribRelationFilter] = useState('');
+  const [contribTypeFilter, setContribTypeFilter] = useState('');
+  const [contribFilterPerson, setContribFilterPerson] = useState('');
+  const [contribSort, setContribSort] = useState('date-desc');
+
   // Purge any corrupted/legacy parsed expenses so strange numbers are cleared
   useEffect(() => {
     if (finances.expenses && finances.expenses.length > 0) {
       updateFinances({ ...finances, expenses: [] });
     }
   }, [finances.expenses]);
+
+  // ── External Contributions Calculations & CRUD ────────────────────────
+  const saveContribution = (contrib) => {
+    const exists = externalContributions.find(c => c.id === contrib.id);
+    const updated = exists
+      ? externalContributions.map(c => c.id === contrib.id ? contrib : c)
+      : [contrib, ...externalContributions];
+    updateFinances({ ...finances, externalContributions: updated });
+    setModal(null);
+  };
+
+  const deleteContribution = (id) => {
+    if (!confirm('Delete this external contribution record?')) return;
+    updateFinances({
+      ...finances,
+      externalContributions: externalContributions.filter(c => c.id !== id)
+    });
+  };
+
+  const totalContributionsAmount = externalContributions.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const curMonthContributions = externalContributions.filter(c => c.date && c.date.startsWith(thisMonth));
+  const curMonthContributionsTotal = curMonthContributions.reduce((s, c) => s + Number(c.amount || 0), 0);
+
+  // ── Family Loan vs Reimbursement Totals ───────────────────────────────
+  let totalFamilyLoanBorrowed = 0;
+  let totalFamilyLoanRepaid = 0;
+  let totalReimbursements = 0;
+  let totalGifts = 0;
+  const personFamilyLoanMap = {};
+
+  externalContributions.forEach(c => {
+    const amt = Number(c.amount || 0);
+    const rep = Number(c.repaidAmount || 0);
+    const type = c.contributionType || 'family_loan';
+
+    if (type === 'reimbursement') {
+      totalReimbursements += amt;
+    } else if (type === 'gift') {
+      totalGifts += amt;
+    } else {
+      // family_loan (Help with my stuff)
+      totalFamilyLoanBorrowed += amt;
+      totalFamilyLoanRepaid += rep;
+      const pending = Math.max(0, amt - rep);
+      const name = (c.contributor || 'Family').trim();
+      if (!personFamilyLoanMap[name]) {
+        personFamilyLoanMap[name] = { name, relation: c.relation || 'Family', borrowed: 0, repaid: 0, pending: 0 };
+      }
+      personFamilyLoanMap[name].borrowed += amt;
+      personFamilyLoanMap[name].repaid += rep;
+      personFamilyLoanMap[name].pending += pending;
+    }
+  });
+
+  const totalFamilyLoanPending = Math.max(0, totalFamilyLoanBorrowed - totalFamilyLoanRepaid);
+  const familyLoanBreakdown = Object.values(personFamilyLoanMap).sort((a, b) => b.pending - a.pending);
+
+  // Group by contributor & relation
+  const contributorSummaries = useMemo(() => {
+    const map = {};
+    externalContributions.forEach(c => {
+      const name = (c.contributor || 'Other').trim();
+      if (!map[name]) {
+        map[name] = { name, relation: c.relation || 'Family', total: 0, count: 0 };
+      }
+      map[name].total += Number(c.amount || 0);
+      map[name].count += 1;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [externalContributions]);
+
+  const topContributor = contributorSummaries[0] || null;
+
+  const sortedByDateDesc = useMemo(() => {
+    return [...externalContributions].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [externalContributions]);
+
+  const latestContribution = sortedByDateDesc[0] || null;
+
+  const filteredContributions = useMemo(() => {
+    return externalContributions.filter(c => {
+      const q = contribSearch.toLowerCase();
+      const matchSearch = !q
+        || c.contributor?.toLowerCase().includes(q)
+        || c.relation?.toLowerCase().includes(q)
+        || c.purpose?.toLowerCase().includes(q)
+        || c.receivedVia?.toLowerCase().includes(q)
+        || c.referenceNo?.toLowerCase().includes(q)
+        || c.notes?.toLowerCase().includes(q);
+      const matchRel = !contribRelationFilter || c.relation === contribRelationFilter;
+      const matchType = !contribTypeFilter || (c.contributionType || 'family_loan') === contribTypeFilter;
+      const matchPerson = !contribFilterPerson || (c.contributor || '').trim() === contribFilterPerson;
+      return matchSearch && matchRel && matchType && matchPerson;
+    }).sort((a, b) => {
+      if (contribSort === 'date-desc') return (b.date || '').localeCompare(a.date || '');
+      if (contribSort === 'date-asc') return (a.date || '').localeCompare(b.date || '');
+      if (contribSort === 'amt-desc') return Number(b.amount || 0) - Number(a.amount || 0);
+      if (contribSort === 'amt-asc') return Number(a.amount || 0) - Number(b.amount || 0);
+      return 0;
+    });
+  }, [externalContributions, contribSearch, contribRelationFilter, contribTypeFilter, contribFilterPerson, contribSort]);
 
   // ── Recurring Expenses Calculations & CRUD ────────────────────────────
   const saveExpense = (exp) => {
@@ -839,7 +1375,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
       const ccBills = isCurrentMonth ? totalMonthlyBills : 0;
       const ccObligations = ccBills + ccEmiTotal;
 
-      // Inflow (Salary + SWP + Lending Payouts)
+      // Inflow (Salary + SWP + Lending Payouts + External Contributions)
       let expectedInflow = Number(salary.amount || 0);
       if (investments?.swp?.monthlyWithdrawal) {
         expectedInflow += Number(investments.swp.monthlyWithdrawal);
@@ -851,6 +1387,14 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
           }
         }
       });
+      // External family contributions received in this month
+      let contributionsThisMonth = 0;
+      externalContributions.forEach(c => {
+        if (c.date && c.date.startsWith(monthKey)) {
+          contributionsThisMonth += Number(c.amount || 0);
+        }
+      });
+      expectedInflow += contributionsThisMonth;
 
       // 5. Monthly Recurring Expenses (Rent, Maintenance, Maid, Electricity, etc.)
       let recurringExpensesTotal = 0;
@@ -880,6 +1424,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         activeCardEmis,
         recurringExpensesTotal,
         recurringDueThisMonth,
+        contributionsThisMonth,
         isCurrentMonth,
         totalOutflow,
         expectedInflow,
@@ -887,7 +1432,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         hasHeavyPolicy
       };
     });
-  }, [futureMonths, vehicles, investments, salary, creditCards, totalMonthlyBills, recurringExpenses]);
+  }, [futureMonths, vehicles, investments, salary, creditCards, totalMonthlyBills, recurringExpenses, externalContributions]);
 
   return (
     <div className="animate-in">
@@ -913,6 +1458,13 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         >
           <CreditCard size={14} style={{ display: 'inline', marginRight: 6 }} />
           Credit Cards &amp; EMIs ({creditCards.length})
+        </button>
+        <button
+          className={`tab ${tab === 'contributions' ? 'active' : ''}`}
+          onClick={() => setTab('contributions')}
+        >
+          <HeartHandshake size={14} style={{ display: 'inline', marginRight: 6 }} />
+          External Contributions ({externalContributions.length})
         </button>
         <button
           className={`tab ${tab === 'salary' ? 'active' : ''}`}
@@ -1028,6 +1580,17 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                         }
                       </div>
                     </div>
+                    {p.contributionsThisMonth > 0 && (
+                      <div>
+                        <div className="text-sm text-muted">🤝 Family Help Inflow</div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-green)' }}>
+                          +{formatCurrency(p.contributionsThisMonth)}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                          External contributions
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Details of policies falling in this month */}
@@ -1303,7 +1866,493 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         </div>
       )}
 
-      {/* ── TAB 4: SALARY & INCOME TRACKER ──────────────────────────── */}
+      {/* ── TAB 4: EXTERNAL CONTRIBUTIONS / FAMILY SUPPORT ─────────── */}
+      {tab === 'contributions' && (
+        <div>
+          {/* Header with Title and Add Button */}
+          <div className="flex justify-between items-center mb-16 flex-wrap gap-12">
+            <div>
+              <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <HeartHandshake size={20} color="var(--accent-indigo)" />
+                External Contributions &amp; Family Support
+              </div>
+              <div className="section-subtitle">
+                Keep a clear, dated record of money sent by sisters, BIL, or family to help with expenses
+              </div>
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => setModal({ type: 'contribution' })}
+            >
+              <Plus size={15} /> Add External Contribution
+            </button>
+          </div>
+
+          {/* ── HIGHLIGHT: FAMILY LOAN BOX (OWED TO FAMILY) ── */}
+          <div className="card mb-20" style={{
+            background: totalFamilyLoanPending > 0
+              ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, var(--bg-card) 100%)'
+              : 'var(--bg-card)',
+            border: totalFamilyLoanPending > 0
+              ? '1px solid rgba(239, 68, 68, 0.3)'
+              : '1px solid var(--border-subtle)'
+          }}>
+            <div className="flex justify-between items-start flex-wrap gap-12 mb-12">
+              <div>
+                <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16 }}>
+                  <Landmark size={18} color={totalFamilyLoanPending > 0 ? 'var(--accent-red)' : 'var(--accent-green)'} />
+                  Family Loan Box (Owed to Family)
+                </div>
+                <div className="section-subtitle">
+                  Tracks money family sent to help with your expenses (Family Loan) vs their own CC reimbursements
+                </div>
+              </div>
+
+              {totalFamilyLoanPending > 0 ? (
+                <span className="badge badge-red" style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <AlertTriangle size={12} /> {formatCurrency(totalFamilyLoanPending)} Pending Owed
+                </span>
+              ) : (
+                <span className="badge badge-green" style={{ fontSize: 12, padding: '4px 10px' }}>
+                  ✓ All Family Loans Cleared
+                </span>
+              )}
+            </div>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: 12,
+              background: 'var(--bg-base)',
+              padding: 14,
+              borderRadius: 'var(--radius-md)'
+            }}>
+              <div>
+                <div className="text-sm font-semibold" style={{ color: 'var(--accent-red)', textTransform: 'uppercase', fontSize: 11 }}>
+                  🏦 Outstanding Family Loan (I Owe)
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-red)', marginTop: 2 }}>
+                  {formatCurrency(totalFamilyLoanPending)}
+                </div>
+                <div className="text-sm text-muted" style={{ marginTop: 2 }}>
+                  Borrowed: {formatCurrency(totalFamilyLoanBorrowed)} · Repaid: {formatCurrency(totalFamilyLoanRepaid)}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-sm font-semibold" style={{ color: 'var(--accent-blue)', textTransform: 'uppercase', fontSize: 11 }}>
+                  💳 Card &amp; Bill Reimbursements
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-blue)', marginTop: 2 }}>
+                  {formatCurrency(totalReimbursements)}
+                </div>
+                <div className="text-sm text-muted" style={{ marginTop: 2 }}>
+                  Sent for their own CC payments / bills (Not owed)
+                </div>
+              </div>
+
+              <div>
+                <div className="text-sm font-semibold" style={{ color: 'var(--accent-green)', textTransform: 'uppercase', fontSize: 11 }}>
+                  🎁 Pure Gifts &amp; Support
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-green)', marginTop: 2 }}>
+                  {formatCurrency(totalGifts)}
+                </div>
+                <div className="text-sm text-muted" style={{ marginTop: 2 }}>
+                  Non-refundable family support
+                </div>
+              </div>
+            </div>
+
+            {/* Breakdown of who you owe */}
+            {familyLoanBreakdown.length > 0 && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
+                <div className="text-sm text-secondary" style={{ marginBottom: 6, fontWeight: 600 }}>
+                  Who you currently owe:
+                </div>
+                <div className="flex gap-10 flex-wrap">
+                  {familyLoanBreakdown.map(b => (
+                    <div
+                      key={b.name}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: b.pending > 0 ? 'rgba(239, 68, 68, 0.08)' : 'rgba(16, 185, 129, 0.08)',
+                        border: b.pending > 0 ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid rgba(16, 185, 129, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{b.name} ({b.relation}):</span>
+                      <span style={{ fontWeight: 800, color: b.pending > 0 ? 'var(--accent-red)' : 'var(--accent-green)' }}>
+                        {b.pending > 0 ? `Owe ${formatCurrency(b.pending)}` : 'Cleared ✓'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Stat Cards */}
+          <div className="grid-cols-4 mb-20">
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--accent-green)' }}>
+                <ArrowDownLeft size={20} />
+              </div>
+              <div>
+                <div className="stat-label">Total Help Received</div>
+                <div className="stat-value" style={{ color: 'var(--accent-green)' }}>
+                  {formatCurrency(totalContributionsAmount)}
+                </div>
+                <div className="stat-sub">
+                  Across {externalContributions.length} contribution{externalContributions.length !== 1 ? 's' : ''}
+                </div>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.15)', color: 'var(--accent-indigo)' }}>
+                <Calendar size={20} />
+              </div>
+              <div>
+                <div className="stat-label">Received This Month</div>
+                <div className="stat-value" style={{ color: curMonthContributionsTotal > 0 ? 'var(--accent-indigo)' : 'var(--text-primary)' }}>
+                  {formatCurrency(curMonthContributionsTotal)}
+                </div>
+                <div className="stat-sub">
+                  {monthLabel(thisMonth)} inflow
+                </div>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(236,72,153,0.15)', color: '#ec4899' }}>
+                <Users size={20} />
+              </div>
+              <div>
+                <div className="stat-label">Top Contributor</div>
+                <div className="stat-value" style={{ fontSize: 18, color: topContributor ? '#ec4899' : 'var(--text-primary)' }}>
+                  {topContributor ? topContributor.name : '—'}
+                </div>
+                <div className="stat-sub">
+                  {topContributor ? `${formatCurrency(topContributor.total)} (${topContributor.relation})` : 'No contributions yet'}
+                </div>
+              </div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--accent-amber)' }}>
+                <HeartHandshake size={20} />
+              </div>
+              <div>
+                <div className="stat-label">Latest Contribution</div>
+                <div className="stat-value" style={{ fontSize: 18, color: latestContribution ? 'var(--accent-amber)' : 'var(--text-primary)' }}>
+                  {latestContribution ? formatCurrency(latestContribution.amount) : '—'}
+                </div>
+                <div className="stat-sub">
+                  {latestContribution ? `${latestContribution.contributor} · ${formatDate(latestContribution.date)}` : 'None recorded'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Contributor Breakdown Cards (Quick filter) */}
+          {contributorSummaries.length > 0 && (
+            <div className="card mb-20" style={{ padding: '14px 16px' }}>
+              <div className="flex justify-between items-center mb-10">
+                <span className="text-sm font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Users size={14} color="var(--accent-indigo)" /> Summary by Contributor (Click to filter list)
+                </span>
+                {contribFilterPerson && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: 11, padding: '2px 8px' }}
+                    onClick={() => setContribFilterPerson('')}
+                  >
+                    Clear Filter ({contribFilterPerson})
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                {contributorSummaries.map(c => {
+                  const isSelected = contribFilterPerson === c.name;
+                  const bStyle = getRelationBadge(c.relation);
+                  return (
+                    <div
+                      key={c.name}
+                      onClick={() => setContribFilterPerson(isSelected ? '' : c.name)}
+                      style={{
+                        cursor: 'pointer',
+                        padding: '8px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        background: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'var(--bg-base)',
+                        border: isSelected ? '1px solid var(--accent-indigo)' : '1px solid var(--border-subtle)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {c.name}
+                          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: bStyle.bg, color: bStyle.color }}>
+                            {c.relation}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {c.count} contribution{c.count !== 1 ? 's' : ''}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent-green)', marginLeft: 4 }}>
+                        {formatCurrency(c.total)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Search, Relation Filter, Type Filter, and Sort Controls */}
+          <div className="flex gap-10 mb-16 flex-wrap">
+            <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+              <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                className="form-input"
+                style={{ paddingLeft: 30 }}
+                placeholder="Search contributor, purpose, relation, notes, ref..."
+                value={contribSearch}
+                onChange={e => setContribSearch(e.target.value)}
+              />
+            </div>
+
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 150 }}
+              value={contribRelationFilter}
+              onChange={e => setContribRelationFilter(e.target.value)}
+            >
+              <option value="">All Relationships</option>
+              {RELATIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 160 }}
+              value={contribTypeFilter}
+              onChange={e => setContribTypeFilter(e.target.value)}
+            >
+              <option value="">All Payment Types</option>
+              <option value="family_loan">🤝 Family Loans (I Owe)</option>
+              <option value="reimbursement">💳 CC / Bill Reimbursements</option>
+              <option value="gift">🎁 Gifts &amp; Support</option>
+            </select>
+
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 160 }}
+              value={contribSort}
+              onChange={e => setContribSort(e.target.value)}
+            >
+              <option value="date-desc">Date (Newest first)</option>
+              <option value="date-asc">Date (Oldest first)</option>
+              <option value="amt-desc">Amount (Highest first)</option>
+              <option value="amt-asc">Amount (Lowest first)</option>
+            </select>
+          </div>
+
+          {/* List of Contributions */}
+          {filteredContributions.length === 0 ? (
+            <div className="card text-center" style={{ padding: 40 }}>
+              <div style={{
+                width: 54, height: 54, borderRadius: '50%',
+                background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-indigo)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 14px'
+              }}>
+                <HeartHandshake size={28} />
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
+                {externalContributions.length === 0 ? 'No external contributions added yet' : 'No contributions match your filters'}
+              </div>
+              <div className="text-sm text-muted" style={{ maxWidth: 440, margin: '0 auto 16px' }}>
+                {externalContributions.length === 0
+                  ? 'Record money sent by your sisters, brother-in-law, or family members to help with insurance premiums, EMIs, or household expenses.'
+                  : 'Try clearing the search query or changing relationship/type filters.'}
+              </div>
+              {externalContributions.length === 0 && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setModal({ type: 'contribution' })}
+                >
+                  <Plus size={14} /> Add First Contribution
+                </button>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredContributions.map(c => {
+                const bStyle = getRelationBadge(c.relation);
+                const type = c.contributionType || 'family_loan';
+                const isFamilyLoan = type === 'family_loan';
+                const isReimbursement = type === 'reimbursement';
+                const pendingOwed = Math.max(0, (Number(c.amount) || 0) - (Number(c.repaidAmount) || 0));
+
+                return (
+                  <div
+                    key={c.id}
+                    className="card"
+                    style={{
+                      padding: '14px 18px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: 14,
+                      border: isFamilyLoan && pendingOwed > 0 ? '1px solid rgba(239, 68, 68, 0.3)' : undefined
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 260, flex: 1 }}>
+                      <div style={{
+                        width: 44, height: 44, borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        background: bStyle.bg, color: bStyle.color, border: `1px solid ${bStyle.border}`,
+                        flexShrink: 0
+                      }}>
+                        <HeartHandshake size={20} />
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: 15 }}>{c.contributor}</span>
+                          <span style={{
+                            fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12,
+                            background: bStyle.bg, color: bStyle.color, border: `1px solid ${bStyle.border}`
+                          }}>
+                            {c.relation || 'Family'}
+                          </span>
+
+                          {/* Type Badge */}
+                          {isFamilyLoan && (
+                            <span
+                              className={`badge ${pendingOwed > 0 ? 'badge-red' : 'badge-green'}`}
+                              style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Landmark size={11} />
+                              {pendingOwed > 0 ? `Family Loan · Owe ${formatCurrency(pendingOwed)}` : 'Family Loan · Cleared ✓'}
+                            </span>
+                          )}
+                          {isReimbursement && (
+                            <span className="badge badge-blue" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <CreditCard size={11} />
+                              CC Reimbursement (Their Bill)
+                            </span>
+                          )}
+                          {type === 'gift' && (
+                            <span className="badge badge-green" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              🎁 Gift / Support
+                            </span>
+                          )}
+
+                          {c.date && (
+                            <span className="text-sm text-muted" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Calendar size={12} /> {formatDate(c.date)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-secondary)' }}>
+                          {c.purpose && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <Tag size={12} color="var(--accent-indigo)" />
+                              <strong>{c.purpose}</strong>
+                            </span>
+                          )}
+                          {c.receivedVia && (
+                            <span className="text-muted">· {c.receivedVia}</span>
+                          )}
+                          {c.referenceNo && (
+                            <span className="text-muted" style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                              Ref: {c.referenceNo}
+                            </span>
+                          )}
+                          {isFamilyLoan && c.repaidAmount > 0 && (
+                            <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
+                              ✓ Repaid {formatCurrency(c.repaidAmount)}
+                            </span>
+                          )}
+                        </div>
+
+                        {c.notes && (
+                          <div className="text-sm text-muted" style={{ marginTop: 4, fontStyle: 'italic' }}>
+                            "{c.notes}"
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--accent-green)' }}>
+                          +{formatCurrency(c.amount)}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                          Received Inflow
+                        </div>
+                      </div>
+
+                      {/* Repay Button if Family Loan */}
+                      {isFamilyLoan && pendingOwed > 0 && (
+                        <button
+                          className="btn btn-sm"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            background: 'rgba(16,185,129,0.12)',
+                            color: 'var(--accent-green)',
+                            border: '1px solid rgba(16,185,129,0.3)',
+                            fontWeight: 600,
+                            fontSize: 12,
+                            padding: '5px 12px',
+                            borderRadius: 'var(--radius-full)'
+                          }}
+                          onClick={() => setModal({ type: 'repayment', contribution: c })}
+                          title="Record a repayment back to family"
+                        >
+                          <RotateCcw size={12} /> Return Money
+                        </button>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="btn btn-secondary btn-icon btn-sm"
+                          onClick={() => setModal({ type: 'contribution', contribution: c })}
+                          title="Edit Contribution"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          className="btn btn-danger btn-icon btn-sm"
+                          onClick={() => deleteContribution(c.id)}
+                          title="Delete Contribution"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB 5: SALARY & INCOME TRACKER ──────────────────────────── */}
       {tab === 'salary' && (
         <div>
           <div className="card mb-20">
@@ -1400,6 +2449,20 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         <ExpenseModal
           expense={modal.expense}
           onSave={saveExpense}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'contribution' && (
+        <ContributionModal
+          contribution={modal.contribution}
+          onSave={saveContribution}
+          onClose={() => setModal(null)}
+        />
+      )}
+      {modal?.type === 'repayment' && (
+        <RepaymentModal
+          contribution={modal.contribution}
+          onSave={saveContribution}
           onClose={() => setModal(null)}
         />
       )}

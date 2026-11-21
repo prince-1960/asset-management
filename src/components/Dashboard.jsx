@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import {
   AlertTriangle, TrendingUp, Home, Truck, Zap, IndianRupee,
   Landmark, Calendar, Check, ChevronRight, MessageCircle,
-  Shield, ArrowUpRight, ArrowDownLeft, PieChart, Activity, Sparkles, Clock, Briefcase
+  Shield, ArrowUpRight, ArrowDownLeft, PieChart, Activity, Sparkles, Clock, Briefcase,
+  HeartHandshake, Users
 } from 'lucide-react';
 import {
   daysUntil, formatDate, formatCurrency, currentMonthKey, monthLabel,
@@ -145,6 +146,67 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
   const isSalaryReceived = salaryRecord ? salaryRecord.status === 'Received' : false;
   const salaryInflow = isSalaryReceived ? (Number(salaryRecord?.amount) || salaryAmount) : 0;
 
+  // ── External Family Contributions Inflow (Realized this month) ────────
+  const externalContributionsInflow = useMemo(() => {
+    return (finances?.externalContributions || [])
+      .filter(c => c.date && c.date.startsWith(thisMonth))
+      .reduce((sum, c) => sum + Number(c.amount || 0), 0);
+  }, [finances?.externalContributions, thisMonth]);
+
+  // ── Family Sent Money & Family Loan Summary ───────────────────────────
+  const familySummary = useMemo(() => {
+    const list = finances?.externalContributions || [];
+    let totalReceived = 0;
+    let borrowed = 0;
+    let repaid = 0;
+    let reimbursements = 0;
+    let gifts = 0;
+    let thisMonthInflow = 0;
+    const personOwedMap = {};
+
+    list.forEach(c => {
+      const amt = Number(c.amount || 0);
+      const rep = Number(c.repaidAmount || 0);
+      totalReceived += amt;
+
+      if (c.date && c.date.startsWith(thisMonth)) {
+        thisMonthInflow += amt;
+      }
+
+      const type = c.contributionType || 'family_loan';
+      if (type === 'reimbursement') {
+        reimbursements += amt;
+      } else if (type === 'gift') {
+        gifts += amt;
+      } else {
+        // family_loan (Help with my stuff)
+        borrowed += amt;
+        repaid += rep;
+        const pending = Math.max(0, amt - rep);
+        if (pending > 0) {
+          const name = (c.contributor || 'Family').trim();
+          personOwedMap[name] = (personOwedMap[name] || 0) + pending;
+        }
+      }
+    });
+
+    const pendingOwed = Math.max(0, borrowed - repaid);
+    const pendingList = Object.entries(personOwedMap).map(([name, pending]) => ({ name, pending }));
+
+    return {
+      hasContributions: list.length > 0,
+      totalCount: list.length,
+      totalReceived,
+      borrowed,
+      repaid,
+      pendingOwed,
+      reimbursements,
+      gifts,
+      thisMonthInflow,
+      pendingList
+    };
+  }, [finances?.externalContributions, thisMonth]);
+
   // ── Credit Card Monthly Dues & Total Debt ─────────────────────────────
   const ccObligations = useMemo(() => {
     let bills = 0;
@@ -244,7 +306,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
 
   // ── Monthly P&L Summary ───────────────────────────────────────────────
   const monthlyPL = useMemo(() => {
-    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount + salaryInflow + lendingInflow;
+    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount + salaryInflow + lendingInflow + externalContributionsInflow;
     const totalOutflow = monthlyObligations.totalOutflow;
     const netCashflow = totalInflow - totalOutflow;
     const isSurplus = netCashflow >= 0;
@@ -258,9 +320,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       rentCollected: rentStats.collected,
       swpReceived: swpReceivedAmount,
       salaryInflow,
-      lendingInflow
+      lendingInflow,
+      externalContributionsInflow
     };
-  }, [fleetIncome, rentStats.collected, swpReceivedAmount, salaryInflow, lendingInflow, monthlyObligations.totalOutflow]);
+  }, [fleetIncome, rentStats.collected, swpReceivedAmount, salaryInflow, lendingInflow, externalContributionsInflow, monthlyObligations.totalOutflow]);
 
   // ── Net Worth Estimator ───────────────────────────────────────────────
   const netWorth = useMemo(() => {
@@ -268,7 +331,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
     const portfolioValue = (investments?.portfolio || []).reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
     // Realized wealth assets: SWP + Portfolio + Loans Given (Principal Lent) + Real Policy Maturities (excluding Health & pure Term)
     const totalAssets = swpCorpus + portfolioValue + policyMaturityAssets + totalPrincipalLent;
-    const totalLiabilities = loanStats.totalPending + ccObligations.totalOutstanding;
+    const totalLiabilities = loanStats.totalPending + ccObligations.totalOutstanding + familySummary.pendingOwed;
     const net = totalAssets - totalLiabilities;
     return {
       swpCorpus,
@@ -278,9 +341,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       totalAssets,
       totalLiabilities,
       net,
-      ccOutstanding: ccObligations.totalOutstanding
+      ccOutstanding: ccObligations.totalOutstanding,
+      familyLoanOwed: familySummary.pendingOwed
     };
-  }, [investments, policyMaturityAssets, totalPrincipalLent, loanStats, ccObligations.totalOutstanding]);
+  }, [investments, policyMaturityAssets, totalPrincipalLent, loanStats, ccObligations.totalOutstanding, familySummary.pendingOwed]);
 
   // ── 6-Month Income Trend Data ─────────────────────────────────────────
   const trendData = useMemo(() => {
@@ -311,6 +375,12 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
           lending += Number(payout.amount || monthlyAmt);
         }
       });
+      let familyHelp = 0;
+      (finances?.externalContributions || []).forEach(c => {
+        if (c.date && c.date.startsWith(monthKey)) {
+          familyHelp += Number(c.amount || 0);
+        }
+      });
       return {
         key: monthKey,
         label: monthLabel(monthKey).split(' ')[0].slice(0, 3),
@@ -318,10 +388,11 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
         rent,
         salary: sal,
         lending,
-        total: fleet + rent + sal + lending
+        familyHelp,
+        total: fleet + rent + sal + lending + familyHelp
       };
     });
-  }, [last6Months, vehicles, rooms, finances?.salary, investments?.loansGiven, salaryAmount, thisMonth]);
+  }, [last6Months, vehicles, rooms, finances?.salary, finances?.externalContributions, investments?.loansGiven, salaryAmount, thisMonth]);
 
   const maxTrendTotal = Math.max(...trendData.map(d => d.total), 1);
 
@@ -398,6 +469,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
                 {formatCurrency(monthlyPL.totalInflow)}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {monthlyPL.externalContributionsInflow > 0 && `Family Help: ${formatCurrency(monthlyPL.externalContributionsInflow)} · `}
                 {monthlyPL.salaryInflow > 0 && `Salary: ${formatCurrency(monthlyPL.salaryInflow)} · `}
                 {monthlyPL.lendingInflow > 0 && `Lending: ${formatCurrency(monthlyPL.lendingInflow)} · `}
                 Fleet: {formatCurrency(fleetIncome)} · Rent: {formatCurrency(rentStats.collected)}
@@ -469,11 +541,100 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                 Loans: {formatCurrency(loanStats.totalPending)}
                 {netWorth.ccOutstanding > 0 && ` · CC: ${formatCurrency(netWorth.ccOutstanding)}`}
+                {netWorth.familyLoanOwed > 0 && ` · Family: ${formatCurrency(netWorth.familyLoanOwed)}`}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── FAMILY SENT MONEY & FAMILY LOAN BOX ───────────────────────── */}
+      {familySummary.hasContributions && (
+        <div className="card mb-20" style={{
+          background: familySummary.pendingOwed > 0
+            ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, var(--bg-card) 100%)'
+            : 'var(--bg-card)',
+          border: familySummary.pendingOwed > 0
+            ? '1px solid rgba(239, 68, 68, 0.3)'
+            : '1px solid var(--border-subtle)'
+        }}>
+          <div className="flex justify-between items-center mb-10 flex-wrap gap-8">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <HeartHandshake size={18} color="var(--accent-indigo)" />
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Family Money &amp; Loan Tracker</span>
+              {familySummary.pendingOwed > 0 ? (
+                <span className="badge badge-red" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <AlertTriangle size={11} /> Owe {formatCurrency(familySummary.pendingOwed)} to Family
+                </span>
+              ) : (
+                <span className="badge badge-green" style={{ fontSize: 11 }}>
+                  ✓ All Family Loans Cleared
+                </span>
+              )}
+            </div>
+            <span className="text-sm text-muted">
+              {familySummary.totalCount} transaction{familySummary.totalCount !== 1 ? 's' : ''} recorded
+            </span>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: 10,
+            background: 'var(--bg-base)',
+            padding: 12,
+            borderRadius: 'var(--radius-md)'
+          }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-red)', textTransform: 'uppercase' }}>
+                🏦 I Owe to Family (Family Loan)
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-red)', marginTop: 2 }}>
+                {formatCurrency(familySummary.pendingOwed)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {familySummary.borrowed > 0 ? `Borrowed: ${formatCurrency(familySummary.borrowed)} · Repaid: ${formatCurrency(familySummary.repaid)}` : 'No active family debt'}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-blue)', textTransform: 'uppercase' }}>
+                💳 CC &amp; Bill Reimbursements
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-blue)', marginTop: 2 }}>
+                {formatCurrency(familySummary.reimbursements)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                Used your credit card / paid own bills
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-green)', textTransform: 'uppercase' }}>
+                🤝 Total Family Money Received
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-green)', marginTop: 2 }}>
+                {formatCurrency(familySummary.totalReceived)}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {familySummary.thisMonthInflow > 0 ? `${formatCurrency(familySummary.thisMonthInflow)} received this month` : 'All-time total'}
+              </div>
+            </div>
+          </div>
+
+          {familySummary.pendingList.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-secondary)' }}>
+              <strong>Pending Family Debt Breakdown: </strong>
+              {familySummary.pendingList.map((p, idx) => (
+                <span key={p.name}>
+                  {idx > 0 && ' · '}
+                  {p.name}: <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>{formatCurrency(p.pending)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Top Stat Cards */}
       <div className={salaryAmount > 0 ? "grid-cols-5 mb-20" : "grid-cols-4 mb-20"}>

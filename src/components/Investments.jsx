@@ -12,7 +12,8 @@ import {
   calculateCumulativeInvestment,
   calculatePolicyTimeline, addYearsToDate, getYearsDifference,
   calculateLastPaymentDate, getPayingTermFromDates,
-  isNomineeNeedUpdate, isPhoneNeedUpdate, isPolicyDueInMonth
+  isNomineeNeedUpdate, isPhoneNeedUpdate, isPolicyDueInMonth,
+  getPolicyEffectiveDueDate
 } from '../utils/storage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -2636,7 +2637,13 @@ function SwpPanel({ investments, updateInvestments }) {
 }
 
 // ─── Payment Calendar View ────────────────────────────────────────────────────
-function PaymentCalendar({ investments }) {
+function PaymentCalendar({
+  investments,
+  onEditPolicy,
+  onEditHealth,
+  onTogglePolicyPayment,
+  onToggleHealthPayment
+}) {
   const policies = investments?.policies || [];
   const healthInsurance = investments?.healthInsurance || [];
   const portfolio = investments?.portfolio || [];
@@ -2645,36 +2652,43 @@ function PaymentCalendar({ investments }) {
   const events = useMemo(() => {
     const list = [];
 
-    // Policy premiums (excludes one-time already paid, completed PPT, and already marked paid)
+    // 1. Life & Savings Policy premiums (uses effective due date: accounts for one-time, PPT, past cycles, and payment history)
     policies.forEach(p => {
-      if (p.status !== 'Active' || !p.nextDueDate) return;
-      const dueMonth = p.nextDueDate.slice(0, 7);
-      if (!isPolicyDueInMonth(p, dueMonth)) return;
-      const d = daysUntil(p.nextDueDate);
-      if (d !== null && d <= horizon && d >= -30) {
+      const due = getPolicyEffectiveDueDate(p);
+      if (!due) return;
+      const d = daysUntil(due);
+      // Include all active overdue premiums plus upcoming payments within the chosen horizon
+      if (d !== null && d <= horizon) {
         list.push({
+          id: p.id,
           type: 'policy',
+          policy: p,
           label: p.policyName || p.insurer,
-          sublabel: `${p.holderName ? `${p.holderName} · ` : ''}${p.insurer} (${p.premiumFrequency})`,
+          policyNumber: p.policyNumber,
+          sublabel: `${p.holderName ? `${p.holderName} · ` : ''}${p.insurer} (${p.premiumFrequency || 'Yearly'})`,
           amount: p.premiumAmount,
-          dueDate: p.nextDueDate,
+          dueDate: due,
           days: d,
           color: 'var(--accent-indigo)'
         });
       }
     });
 
-    // Health Insurance premiums
+    // 2. Health Insurance premiums
     healthInsurance.forEach(h => {
-      const due = h.nextDueDate || h.expiryDate;
-      if (!due || h.status !== 'Active') return;
-      const dueMonth = due.slice(0, 7);
-      if (!isPolicyDueInMonth({ ...h, nextDueDate: due }, dueMonth)) return;
+      const due = getPolicyEffectiveDueDate({
+        ...h,
+        nextDueDate: h.nextDueDate || h.expiryDate
+      });
+      if (!due) return;
       const d = daysUntil(due);
-      if (d !== null && d <= horizon && d >= -30) {
+      if (d !== null && d <= horizon) {
         list.push({
+          id: h.id,
           type: 'health',
+          policy: h,
           label: `${h.policyName || h.insurer} (Health)`,
+          policyNumber: h.policyNumber,
           sublabel: `${h.holderName || h.coveredMembers || ''} · ${h.insurer} (${h.planType || 'Mediclaim'})`,
           amount: h.premiumAmount,
           dueDate: due,
@@ -2684,15 +2698,17 @@ function PaymentCalendar({ investments }) {
       }
     });
 
-    // Portfolio items (recurring)
+    // 3. Portfolio items (recurring SIPs, FDs, etc.)
     portfolio.forEach(item => {
       if (item.status !== 'Active' || item.frequency === 'One-Time') return;
       const due = getNextDueDate(item.startDate, item.frequency);
       if (!due) return;
       const d = daysUntil(due);
-      if (d !== null && d <= horizon && d >= -30) {
+      if (d !== null && d <= horizon) {
         list.push({
+          id: item.id,
           type: 'portfolio',
+          item,
           label: item.name || item.type,
           sublabel: `${item.platform ? `${item.platform} · ` : ''}${item.type} (${item.frequency})`,
           amount: item.amount,
@@ -2719,7 +2735,7 @@ function PaymentCalendar({ investments }) {
           <div className="stat-value" style={{ color: overdueCount > 0 ? 'var(--accent-red)' : 'var(--text-muted)' }}>
             {overdueCount}
           </div>
-          <div className="stat-sub">Past due date</div>
+          <div className="stat-sub">{overdueCount > 0 ? 'Action required: payment missed or due' : 'All up to date'}</div>
         </div>
 
         <div className="stat-card" style={{ background: dueSoonCount > 0 ? 'rgba(245,158,11,0.08)' : undefined }}>
@@ -2735,7 +2751,7 @@ function PaymentCalendar({ investments }) {
           <div className="stat-value" style={{ color: 'var(--accent-cyan)' }}>
             {formatCurrency(totalUpcoming)}
           </div>
-          <div className="stat-sub">Across {events.length} upcoming debits</div>
+          <div className="stat-sub">Across {events.length} scheduled payment{events.length !== 1 ? 's' : ''}</div>
         </div>
       </div>
 
@@ -2763,28 +2779,96 @@ function PaymentCalendar({ investments }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {events.map((ev) => (
             <div
-              key={`${ev.type}-${ev.dueDate}-${ev.label}`}
+              key={`${ev.type}-${ev.id || ev.label}-${ev.dueDate}`}
               className="card"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '14px 18px',
+                flexWrap: 'wrap',
+                gap: 12,
                 borderLeft: `4px solid ${ev.days < 0 ? 'var(--accent-red)' : ev.days <= 7 ? 'var(--accent-amber)' : 'var(--accent-blue)'}`
               }}
             >
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 15 }}>{ev.label}</div>
-                <div className="text-sm text-muted">{ev.sublabel}</div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 600, fontSize: 15 }}>{ev.label}</span>
+                  {ev.policyNumber && (
+                    <span style={{ fontFamily: 'monospace', fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '1px 6px', borderRadius: 4, color: 'var(--accent-blue)' }}>
+                      #{ev.policyNumber}
+                    </span>
+                  )}
+                  {ev.days < 0 && (
+                    <span className="badge badge-red" style={{ fontSize: 10, fontWeight: 700 }}>
+                      🚨 {Math.abs(ev.days)}d Overdue
+                    </span>
+                  )}
+                  {ev.days === 0 && (
+                    <span className="badge badge-amber" style={{ fontSize: 10, fontWeight: 700 }}>
+                      ⏳ Due Today
+                    </span>
+                  )}
+                  {ev.days > 0 && ev.days <= 7 && (
+                    <span className="badge badge-amber" style={{ fontSize: 10 }}>
+                      Due in {ev.days}d
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm text-muted" style={{ marginTop: 2 }}>{ev.sublabel}</div>
               </div>
 
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>
-                  {formatCurrency(ev.amount)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>
+                    {formatCurrency(ev.amount)}
+                  </div>
+                  <div style={{
+                    fontSize: 12, fontWeight: 600,
+                    color: ev.days < 0 ? 'var(--accent-red)' : ev.days <= 7 ? 'var(--accent-amber)' : 'var(--accent-green)'
+                  }}>
+                    {formatDate(ev.dueDate)}
+                  </div>
                 </div>
-                <div style={{
-                  fontSize: 12, fontWeight: 600,
-                  color: ev.days < 0 ? 'var(--accent-red)' : ev.days <= 7 ? 'var(--accent-amber)' : 'var(--accent-green)'
-                }}>
-                  {formatDate(ev.dueDate)} ({ev.days < 0 ? `${Math.abs(ev.days)}d overdue` : ev.days === 0 ? 'Due Today' : `${ev.days}d left`})
+
+                {/* Actions: Mark Paid / Edit */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {ev.type === 'policy' && (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => onTogglePolicyPayment?.(ev.policy.id, ev.dueDate.slice(0, 7))}
+                        title="Mark as Paid for this due cycle"
+                        style={{ fontSize: 12, padding: '4px 8px', color: 'var(--accent-green)', borderColor: 'rgba(16,185,129,0.4)', display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Check size={13} /> Paid
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-icon btn-sm"
+                        onClick={() => onEditPolicy?.(ev.policy)}
+                        title="Edit Policy"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    </>
+                  )}
+                  {ev.type === 'health' && (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => onToggleHealthPayment?.(ev.policy.id, ev.dueDate.slice(0, 7))}
+                        title="Mark as Paid for this renewal cycle"
+                        style={{ fontSize: 12, padding: '4px 8px', color: 'var(--accent-green)', borderColor: 'rgba(16,185,129,0.4)', display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Check size={13} /> Paid
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-icon btn-sm"
+                        onClick={() => onEditHealth?.(ev.policy)}
+                        title="Edit Health Policy"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -3070,23 +3154,32 @@ export default function Investments({ investments, updateInvestments }) {
   const activeLoans = loansGiven.filter(l => l.status === 'Active');
   const curMonthReceivedCount = activeLoans.filter(l => l.payouts?.[curMonthKey]?.status === 'Received').length;
 
-  const upcomingAlerts = [
-    ...policies.filter(p => {
-      if (!p.nextDueDate) return false;
-      const dueMonth = p.nextDueDate.slice(0, 7);
-      if (!isPolicyDueInMonth(p, dueMonth)) return false;
-      const d = daysUntil(p.nextDueDate);
-      return d !== null && d <= 30;
-    }),
-    ...healthInsurance.filter(h => {
-      const due = h.nextDueDate || h.expiryDate;
-      if (!due) return false;
-      const dueMonth = due.slice(0, 7);
-      if (!isPolicyDueInMonth({ ...h, nextDueDate: due }, dueMonth)) return false;
+  const upcomingAlerts = useMemo(() => {
+    let count = 0;
+    policies.forEach(p => {
+      const due = getPolicyEffectiveDueDate(p);
+      if (!due) return;
       const d = daysUntil(due);
-      return d !== null && d <= 30;
-    })
-  ].length;
+      if (d !== null && d <= 30) count++;
+    });
+    healthInsurance.forEach(h => {
+      const due = getPolicyEffectiveDueDate({
+        ...h,
+        nextDueDate: h.nextDueDate || h.expiryDate
+      });
+      if (!due) return;
+      const d = daysUntil(due);
+      if (d !== null && d <= 30) count++;
+    });
+    portfolio.forEach(item => {
+      if (item.status !== 'Active' || item.frequency === 'One-Time') return;
+      const due = getNextDueDate(item.startDate, item.frequency);
+      if (!due) return;
+      const d = daysUntil(due);
+      if (d !== null && d <= 30) count++;
+    });
+    return count;
+  }, [policies, healthInsurance, portfolio]);
 
   // Compute To-Do & Action Items (both auto-detected and user-created)
   const allTodoItems = useMemo(() => {
@@ -3898,7 +3991,13 @@ export default function Investments({ investments, updateInvestments }) {
 
       {/* ── Tab 3: Calendar ──────────────────────────────────────────── */}
       {tab === 'calendar' && (
-        <PaymentCalendar investments={investments} />
+        <PaymentCalendar
+          investments={investments}
+          onEditPolicy={(p) => { setEditingPolicy(p); setShowPolicyModal(true); }}
+          onEditHealth={(h) => { setEditingHealthPolicy(h); setShowHealthModal(true); }}
+          onTogglePolicyPayment={togglePolicyPayment}
+          onToggleHealthPayment={toggleHealthPayment}
+        />
       )}
 
       {/* ── Tab 4: To-Do & Action Items ───────────────────────────────── */}

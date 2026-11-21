@@ -368,6 +368,35 @@ export const exportToExcel = (vehicles, rooms, investments, finances) => {
     XLSX.utils.book_append_sheet(wb, ws13, 'Salary Setup');
   }
 
+  // ── Sheet 14: External Contributions / Family Support ─────────────────
+  const contributionRows = (finances?.externalContributions || []).map(c => {
+    const type = c.contributionType || 'family_loan';
+    const isLoan = type === 'family_loan';
+    const pending = isLoan ? Math.max(0, Number(c.amount || 0) - Number(c.repaidAmount || 0)) : 0;
+    const status = !isLoan
+      ? 'Not Applicable'
+      : (pending === 0 ? 'Fully Repaid' : c.repaidAmount > 0 ? 'Partially Repaid' : 'Pending Owed');
+
+    return {
+      Date: c.date || '',
+      Contributor: c.contributor || '',
+      Relationship: c.relation || '',
+      'Amount (₹)': c.amount || 0,
+      'Payment Type': type === 'reimbursement' ? 'CC Reimbursement (Their Bill)' : type === 'gift' ? 'Gift / Support' : 'Family Loan (Help with my stuff)',
+      'Family Debt Status': status,
+      'Repaid Amount (₹)': c.repaidAmount || 0,
+      'Pending Owed to Family (₹)': pending,
+      Purpose: c.purpose || '',
+      'Payment Mode': c.receivedVia || '',
+      'Reference / UTR': c.referenceNo || '',
+      Notes: c.notes || '',
+    };
+  });
+  if (contributionRows.length) {
+    const ws14 = XLSX.utils.json_to_sheet(contributionRows);
+    XLSX.utils.book_append_sheet(wb, ws14, 'External Contributions');
+  }
+
   // Save file
   const filename = `AssetFlow_Export_${new Date().toISOString().split('T')[0]}.xlsx`;
   XLSX.writeFile(wb, filename);

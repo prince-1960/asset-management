@@ -195,6 +195,7 @@ function defaultFinances() {
     },
     creditCards: [],
     recurringExpenses: [],
+    externalContributions: [],
   };
 }
 
@@ -207,6 +208,7 @@ export const mergeFinances = (loaded) => {
     salary: { ...def.salary, ...(loaded.salary || {}) },
     creditCards: loaded.creditCards || [],
     recurringExpenses: loaded.recurringExpenses || [],
+    externalContributions: loaded.externalContributions || [],
   };
 };
 
@@ -600,4 +602,88 @@ export function isPolicyDueInMonth(policy, monthKey) {
   }
 
   return false;
+}
+
+// ── Calculate Effective / Next Active Due Date for a Policy or Health Cover ──
+export function getPolicyEffectiveDueDate(policy) {
+  if (!policy || policy.status !== 'Active' || !policy.premiumAmount) return null;
+
+  const freq = policy.premiumFrequency || 'Yearly';
+  const isOneTime = freq === 'One-Time' || freq === 'Single Premium' || freq === 'One-time';
+
+  // 1. One-Time policy: only due if not yet paid
+  if (isOneTime) {
+    const hasAnyPaid = policy.paymentHistory && Object.values(policy.paymentHistory).some(h => h?.status === 'Paid');
+    if (hasAnyPaid || Number(policy.alreadyPaid) > 0 || policy.status === 'Paid Up') {
+      return null;
+    }
+    if (policy.startDate) {
+      const today = new Date();
+      const start = new Date(policy.startDate);
+      if (start < new Date(today.getFullYear(), today.getMonth(), 1)) {
+        return null; // Paid at inception in a previous month
+      }
+    }
+    return policy.nextDueDate || policy.startDate || null;
+  }
+
+  // 2. Check if payment term has already ended (PPT completed)
+  if (policy.paymentEndDate) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (todayStr > policy.paymentEndDate) {
+      return null;
+    }
+  }
+
+  const rawDue = policy.nextDueDate || policy.startDate;
+  if (!rawDue) return null;
+
+  const intervalMonths = {
+    Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12
+  }[freq] || 12;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const rawDate = new Date(rawDue);
+  if (isNaN(rawDate.getTime())) return null;
+
+  const rawMonthKey = rawDue.slice(0, 7);
+
+  // If in future or today:
+  if (rawDate >= today) {
+    // If already marked as Paid for this upcoming cycle, advance to next cycle
+    if (policy.paymentHistory?.[rawMonthKey]?.status === 'Paid') {
+      const nextDate = new Date(rawDate);
+      nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+      const nextStr = nextDate.toISOString().split('T')[0];
+      if (policy.paymentEndDate && nextStr > policy.paymentEndDate) return null;
+      return nextStr;
+    }
+    return rawDue;
+  }
+
+  // If in the past:
+  const daysPast = Math.ceil((today - rawDate) / (1000 * 60 * 60 * 24));
+  // If recent (within 60 days) and not marked paid, it is genuinely overdue
+  if (daysPast <= 60 && policy.paymentHistory?.[rawMonthKey]?.status !== 'Paid') {
+    return rawDue;
+  }
+
+  // If older than 60 days or was paid, roll forward to find the current/next active cycle
+  let nextDate = new Date(rawDate);
+  while (nextDate < today) {
+    nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+  }
+  const nextStr = nextDate.toISOString().split('T')[0];
+  const nextMonthKey = nextStr.slice(0, 7);
+
+  if (policy.paymentHistory?.[nextMonthKey]?.status === 'Paid') {
+    nextDate.setMonth(nextDate.getMonth() + intervalMonths);
+    const advStr = nextDate.toISOString().split('T')[0];
+    if (policy.paymentEndDate && advStr > policy.paymentEndDate) return null;
+    return advStr;
+  }
+
+  if (policy.paymentEndDate && nextStr > policy.paymentEndDate) return null;
+  return nextStr;
 }
