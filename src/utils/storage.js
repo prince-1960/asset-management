@@ -279,3 +279,178 @@ export const formatCurrency = (amount) => {
   if (amount === null || amount === undefined || amount === '' || isNaN(n)) return '—';
   return `₹${n.toLocaleString('en-IN')}`;
 };
+
+// ─── Policy Terms & Timeline Helpers ──────────────────────────────────────────
+export const addYearsToDate = (dateStr, years) => {
+  if (!dateStr || !years || isNaN(years)) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  d.setFullYear(d.getFullYear() + Number(years));
+  return d.toISOString().split('T')[0];
+};
+
+export const getYearsDifference = (startDateStr, endDateStr) => {
+  if (!startDateStr || !endDateStr) return '';
+  const d1 = new Date(startDateStr);
+  const d2 = new Date(endDateStr);
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return '';
+  const diffYears = d2.getFullYear() - d1.getFullYear();
+  return diffYears > 0 ? diffYears : '';
+};
+
+export const calculatePolicyTimeline = ({
+  startDate,
+  payingTerm,
+  policyTerm,
+  paymentEndDate,
+  maturityDate,
+  amount,
+  frequency = 'Yearly',
+  alreadyPaid,
+  totalPaid
+}) => {
+  const pTerm = Number(policyTerm) || (startDate && maturityDate ? getYearsDifference(startDate, maturityDate) : null);
+  const payTerm = Number(payingTerm) || (startDate && paymentEndDate ? getYearsDifference(startDate, paymentEndDate) : null);
+
+  const amt = Number(amount) || 0;
+  const intervalMonths = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[frequency] || 12;
+  const installmentsPerYear = 12 / intervalMonths;
+
+  const totalInstallments = payTerm ? Math.round(Number(payTerm) * installmentsPerYear) : null;
+  const totalCommitment = totalInstallments && amt ? totalInstallments * amt : null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const calcEndDate = paymentEndDate || (startDate && payTerm ? addYearsToDate(startDate, payTerm) : '');
+  const calcMaturityDate = maturityDate || (startDate && pTerm ? addYearsToDate(startDate, pTerm) : '');
+
+  let isPremiumCompleted = false;
+  let daysUntilPayEnd = null;
+
+  if (calcEndDate) {
+    const end = new Date(calcEndDate);
+    if (!isNaN(end.getTime())) {
+      isPremiumCompleted = end <= today;
+      daysUntilPayEnd = Math.ceil((end - today) / (1000 * 60 * 60 * 24));
+    }
+  }
+
+  let isMatured = false;
+  let daysUntilMaturity = null;
+  let yearsUntilMaturity = null;
+
+  if (calcMaturityDate) {
+    const mat = new Date(calcMaturityDate);
+    if (!isNaN(mat.getTime())) {
+      isMatured = mat <= today;
+      daysUntilMaturity = Math.ceil((mat - today) / (1000 * 60 * 60 * 24));
+      yearsUntilMaturity = Math.max(0, Math.round(((mat - today) / (1000 * 60 * 60 * 24 * 365.25)) * 10) / 10);
+    }
+  }
+
+  const paidAmount = Number(alreadyPaid ?? totalPaid) || 0;
+  const remainingCommitment = totalCommitment !== null ? Math.max(0, totalCommitment - paidAmount) : null;
+
+  return {
+    payingTerm: payTerm,
+    policyTerm: pTerm,
+    calculatedPayEndDate: calcEndDate,
+    calculatedMaturityDate: calcMaturityDate,
+    totalInstallments,
+    totalCommitment,
+    isPremiumCompleted,
+    daysUntilPayEnd,
+    isMatured,
+    daysUntilMaturity,
+    yearsUntilMaturity,
+    remainingCommitment
+  };
+};
+
+// ─── Cumulative Investment / Premium Paid Calculation ─────────────────────────
+export const calculateCumulativeInvestment = ({
+  startDate,
+  amount,
+  frequency = 'Yearly',
+  endDate,
+  paymentEndDate,
+  paymentHistory,
+  alreadyPaid,
+  totalPaidOverride
+}) => {
+  const explicitPaid = Number(alreadyPaid ?? totalPaidOverride);
+  if (!isNaN(explicitPaid) && explicitPaid > 0) {
+    const amt = Number(amount) || 0;
+    const count = amt > 0 ? Math.round(explicitPaid / amt) : 1;
+    const unitLabel = frequency === 'Yearly' ? 'yr' : frequency === 'Monthly' ? 'mo' : frequency === 'Quarterly' ? 'qtr' : 'inst.';
+    return {
+      totalPaid: explicitPaid,
+      count,
+      label: count > 1 ? `${count} ${unitLabel}s (₹${explicitPaid.toLocaleString('en-IN')})` : `₹${explicitPaid.toLocaleString('en-IN')} paid`,
+      isManual: true
+    };
+  }
+
+  const amt = Number(amount) || 0;
+  if (!amt) return { totalPaid: 0, count: 0, label: '—' };
+
+  if (frequency === 'One-Time' || !startDate) {
+    return {
+      totalPaid: amt,
+      count: 1,
+      label: frequency === 'One-Time' ? 'One-time deposit' : '1 installment'
+    };
+  }
+
+  const start = new Date(startDate);
+  if (isNaN(start.getTime())) {
+    return { totalPaid: amt, count: 1, label: '1 installment' };
+  }
+
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  if (start > today) {
+    return { totalPaid: 0, count: 0, label: 'Not started yet' };
+  }
+
+  const stopStr = paymentEndDate || endDate;
+  let endLimit = today;
+  if (stopStr) {
+    const end = new Date(stopStr);
+    if (!isNaN(end.getTime()) && end < today) {
+      endLimit = end;
+    }
+  }
+
+  const intervalMonths = {
+    Monthly: 1,
+    Quarterly: 3,
+    'Half-Yearly': 6,
+    Yearly: 12,
+  }[frequency] || 12;
+
+  let count = 0;
+  let cur = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  while (cur <= endLimit) {
+    count++;
+    cur = new Date(cur.getFullYear(), cur.getMonth() + intervalMonths, cur.getDate());
+  }
+
+  // Deduct explicitly marked missed payments if available
+  if (paymentHistory) {
+    const missed = Object.values(paymentHistory).filter(p => p?.status === 'Missed').length;
+    count = Math.max(0, count - missed);
+  }
+
+  const totalPaid = count * amt;
+  const unitLabel = frequency === 'Yearly' ? 'yr' : frequency === 'Monthly' ? 'mo' : frequency === 'Quarterly' ? 'qtr' : 'half-yr';
+  const label = `${count} ${unitLabel}${count !== 1 ? 's' : ''} (${frequency})`;
+
+  return {
+    totalPaid,
+    count,
+    label
+  };
+};

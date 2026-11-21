@@ -8,6 +8,8 @@ import {
 import {
   genId, formatDate, formatCurrency, daysUntil,
   currentMonthKey, monthLabel, getLast12Months,
+  calculateCumulativeInvestment,
+  calculatePolicyTimeline, addYearsToDate, getYearsDifference
 } from '../utils/storage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -57,6 +59,8 @@ const blankPolicy = () => ({
   sumAssured: '', maturityAmount: '', maturityDate: '',
   startDate: '', paymentEndDate: '', premiumAmount: '',
   premiumFrequency: 'Yearly', nextDueDate: '',
+  payingTerm: '', policyTerm: '',
+  alreadyPaid: '',
   otpPhone: '', agentName: '', agentPhone: '',
   status: 'Active', paymentHistory: {}, notes: '',
 });
@@ -147,14 +151,93 @@ function PolicyModal({ initial, onSave, onClose }) {
     const finalFreq = selectedFreq === 'Other' ? (customFreq.trim() || 'Other') : selectedFreq;
 
     const ndd = form.nextDueDate || getNextDueDate(form.startDate, finalFreq) || '';
+    const derivedPayTerm = form.payingTerm || (form.startDate && form.paymentEndDate ? getYearsDifference(form.startDate, form.paymentEndDate) : '');
+    const derivedPolicyTerm = form.policyTerm || (form.startDate && form.maturityDate ? getYearsDifference(form.startDate, form.maturityDate) : '');
+
     onSave({
       ...form,
       insurer: finalInsurer,
       type: finalType,
       premiumFrequency: finalFreq,
       nextDueDate: ndd,
+      payingTerm: derivedPayTerm,
+      policyTerm: derivedPolicyTerm,
+      alreadyPaid: form.alreadyPaid !== '' && !isNaN(Number(form.alreadyPaid)) ? Number(form.alreadyPaid) : '',
     });
   };
+
+  const handleStartDateChange = (val) => {
+    setForm(f => {
+      const next = { ...f, startDate: val };
+      if (val && f.payingTerm) {
+        next.paymentEndDate = addYearsToDate(val, f.payingTerm);
+      }
+      if (val && f.policyTerm) {
+        next.maturityDate = addYearsToDate(val, f.policyTerm);
+      }
+      return next;
+    });
+  };
+
+  const handlePayingTermChange = (years) => {
+    setForm(f => {
+      const next = { ...f, payingTerm: years };
+      if (f.startDate && years && !isNaN(years)) {
+        next.paymentEndDate = addYearsToDate(f.startDate, years);
+      }
+      return next;
+    });
+  };
+
+  const handlePaymentEndDateChange = (date) => {
+    setForm(f => {
+      const next = { ...f, paymentEndDate: date };
+      if (f.startDate && date) {
+        const diff = getYearsDifference(f.startDate, date);
+        if (diff) next.payingTerm = diff;
+      }
+      return next;
+    });
+  };
+
+  const handlePolicyTermChange = (years) => {
+    setForm(f => {
+      const next = { ...f, policyTerm: years };
+      if (f.startDate && years && !isNaN(years)) {
+        next.maturityDate = addYearsToDate(f.startDate, years);
+      }
+      return next;
+    });
+  };
+
+  const handleMaturityDateChange = (date) => {
+    setForm(f => {
+      const next = { ...f, maturityDate: date };
+      if (f.startDate && date) {
+        const diff = getYearsDifference(f.startDate, date);
+        if (diff) next.policyTerm = diff;
+      }
+      return next;
+    });
+  };
+
+  const autoCalculated = calculateCumulativeInvestment({
+    startDate: form.startDate,
+    amount: form.premiumAmount,
+    frequency: selectedFreq === 'Other' ? customFreq : selectedFreq,
+    paymentEndDate: form.paymentEndDate,
+  });
+
+  const timeline = calculatePolicyTimeline({
+    startDate: form.startDate,
+    payingTerm: form.payingTerm,
+    policyTerm: form.policyTerm,
+    paymentEndDate: form.paymentEndDate,
+    maturityDate: form.maturityDate,
+    amount: form.premiumAmount,
+    frequency: selectedFreq === 'Other' ? customFreq : selectedFreq,
+    alreadyPaid: form.alreadyPaid || autoCalculated.totalPaid
+  });
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -320,47 +403,142 @@ function PolicyModal({ initial, onSave, onClose }) {
             </div>
           </div>
 
-          {/* Important Dates */}
-          <div className="form-row form-row-3">
-            <div className="form-group">
-              <label className="form-label">Policy Start Date</label>
-              <input
-                className="form-input"
-                type="date"
-                value={form.startDate}
-                onChange={e => set('startDate', e.target.value)}
-              />
+          {/* Policy Terms & Key Milestones */}
+          <div style={{
+            background: 'var(--bg-base)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)',
+            padding: 14,
+            marginBottom: 16
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Clock size={15} color="var(--accent-blue)" /> Policy Terms &amp; Timeline (Paying Term vs Policy Term)
             </div>
-            <div className="form-group">
-              <label className="form-label">Premium Pay Till Date</label>
-              <input
-                className="form-input"
-                type="date"
-                value={form.paymentEndDate}
-                onChange={e => set('paymentEndDate', e.target.value)}
-              />
+
+            <div className="form-row form-row-3" style={{ marginBottom: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Policy Start Date *</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={form.startDate}
+                  onChange={e => handleStartDateChange(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">
+                  Paying Term (PPT in Yrs)
+                </label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={form.payingTerm || ''}
+                  onChange={e => handlePayingTermChange(e.target.value)}
+                  placeholder="e.g. 10 (years to pay)"
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                  Pay till: <strong>{form.paymentEndDate ? formatDate(form.paymentEndDate) : '—'}</strong>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">
+                  Policy Term (PT in Yrs)
+                </label>
+                <input
+                  className="form-input"
+                  type="number"
+                  value={form.policyTerm || ''}
+                  onChange={e => handlePolicyTermChange(e.target.value)}
+                  placeholder="e.g. 20 (years till maturity)"
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                  Maturity: <strong>{form.maturityDate ? formatDate(form.maturityDate) : '—'}</strong>
+                </div>
+              </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">Next Due Date</label>
-              <input
-                className="form-input"
-                type="date"
-                value={form.nextDueDate}
-                onChange={e => set('nextDueDate', e.target.value)}
-              />
+
+            <div className="form-row form-row-3">
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Premium Pay Till Date</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={form.paymentEndDate}
+                  onChange={e => handlePaymentEndDateChange(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Maturity Date (Expect Money)</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={form.maturityDate}
+                  onChange={e => handleMaturityDateChange(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Next Due Date</label>
+                <input
+                  className="form-input"
+                  type="date"
+                  value={form.nextDueDate}
+                  onChange={e => set('nextDueDate', e.target.value)}
+                />
+              </div>
             </div>
+
+            {/* Live Timeline Calculation Callout */}
+            {(timeline.totalCommitment || timeline.yearsUntilMaturity !== null) && (
+              <div style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(99,102,241,0.06)',
+                border: '1px solid rgba(99,102,241,0.2)',
+                fontSize: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5
+              }}>
+                {timeline.payingTerm && (
+                  <div>
+                    ⏳ <strong>Paying Term:</strong> Pay for <strong>{timeline.payingTerm} years</strong>
+                    {timeline.totalInstallments ? ` (${timeline.totalInstallments} installments · Total ${formatCurrency(timeline.totalCommitment)})` : ''}
+                    {timeline.isPremiumCompleted ? (
+                      <span style={{ color: 'var(--accent-green)', fontWeight: 600, marginLeft: 6 }}>
+                        ✓ Premiums Completed!
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--accent-amber)', marginLeft: 6 }}>
+                        (Pay till {formatDate(timeline.calculatedPayEndDate)})
+                      </span>
+                    )}
+                  </div>
+                )}
+                {timeline.policyTerm && (
+                  <div>
+                    🎯 <strong>Policy Term &amp; Maturity:</strong> Expect money on <strong>{formatDate(timeline.calculatedMaturityDate)}</strong>
+                    {timeline.yearsUntilMaturity !== null && (
+                      <span style={{ color: 'var(--accent-cyan)', marginLeft: 6 }}>
+                        ({timeline.yearsUntilMaturity > 0 ? `${timeline.yearsUntilMaturity} years from now` : 'Matured'})
+                      </span>
+                    )}
+                    {form.maturityAmount && (
+                      <span style={{ fontWeight: 700, color: 'var(--accent-green)', marginLeft: 6 }}>
+                        · Expected Payout: {formatCurrency(form.maturityAmount)}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="form-row form-row-3">
-            <div className="form-group">
-              <label className="form-label">Maturity Date</label>
-              <input
-                className="form-input"
-                type="date"
-                value={form.maturityDate}
-                onChange={e => set('maturityDate', e.target.value)}
-              />
-            </div>
+          <div className="form-row form-row-2">
             <div className="form-group">
               <label className="form-label">Linked OTP Phone Number</label>
               <input
@@ -378,6 +556,45 @@ function PolicyModal({ initial, onSave, onClose }) {
                 onChange={e => set('agentName', e.target.value)}
                 placeholder="Agent name & number"
               />
+            </div>
+          </div>
+
+          {/* Cumulative Total Paid Tracking */}
+          <div style={{
+            background: 'rgba(99,102,241,0.08)',
+            border: '1px solid rgba(99,102,241,0.22)',
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 14px',
+            marginBottom: 16
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--accent-indigo)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <IndianRupee size={15} /> Total Premiums Paid Till Date
+              </div>
+              {autoCalculated.totalPaid > 0 && (
+                <span className="badge" style={{ background: 'rgba(16,185,129,0.15)', color: 'var(--accent-green)', fontWeight: 600, fontSize: 11 }}>
+                  ⚡ Auto-Calculated: {formatCurrency(autoCalculated.totalPaid)} ({autoCalculated.label})
+                </span>
+              )}
+            </div>
+
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: 12, display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total Already Paid (₹)</span>
+                <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                  {form.alreadyPaid ? 'Custom total entered' : `Defaulting to auto-calculated: ${formatCurrency(autoCalculated.totalPaid || 0)}`}
+                </span>
+              </label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.alreadyPaid || ''}
+                onChange={e => set('alreadyPaid', e.target.value)}
+                placeholder={autoCalculated.totalPaid > 0 ? `Auto: ${autoCalculated.totalPaid} (leave blank to use auto, or type override)` : 'e.g. 400000'}
+              />
+              <div className="text-sm text-muted" style={{ marginTop: 4, fontSize: 11 }}>
+                Automatically calculated based on Start Date &amp; Frequency (e.g. ₹50k/year since 2019 = {autoCalculated.totalPaid ? formatCurrency(autoCalculated.totalPaid) : '₹0'}). Enter a specific amount only if you want to override the calculation.
+              </div>
             </div>
           </div>
 
@@ -828,6 +1045,26 @@ function PolicyCard({ policy, onEdit, onDelete, onTogglePayment }) {
   const days = policy.nextDueDate ? daysUntil(policy.nextDueDate) : null;
   const statusBadge = getStatusBadgeClass(policy.status);
 
+  const cumulative = calculateCumulativeInvestment({
+    startDate: policy.startDate,
+    amount: policy.premiumAmount,
+    frequency: policy.premiumFrequency,
+    paymentEndDate: policy.paymentEndDate,
+    paymentHistory: policy.paymentHistory,
+    alreadyPaid: policy.alreadyPaid
+  });
+
+  const timeline = calculatePolicyTimeline({
+    startDate: policy.startDate,
+    payingTerm: policy.payingTerm,
+    policyTerm: policy.policyTerm,
+    paymentEndDate: policy.paymentEndDate,
+    maturityDate: policy.maturityDate,
+    amount: policy.premiumAmount,
+    frequency: policy.premiumFrequency,
+    alreadyPaid: cumulative.totalPaid,
+  });
+
   return (
     <div className="vehicle-card" style={{ marginBottom: 12 }}>
       {/* Header */}
@@ -838,21 +1075,65 @@ function PolicyCard({ policy, onEdit, onDelete, onTogglePayment }) {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>{policy.policyName || 'Unnamed Policy'}</span>
+            <span style={{ fontWeight: 700, fontSize: 16 }}>{policy.policyName || 'Unnamed Policy'}</span>
             <span className={`badge ${statusBadge}`}>{policy.status}</span>
             {policy.type && <span className="badge badge-muted">{policy.type}</span>}
+            <span
+              className="badge"
+              style={{
+                background: 'rgba(99,102,241,0.18)',
+                color: '#818cf8',
+                border: '1px solid rgba(99,102,241,0.35)',
+                fontWeight: 700,
+                fontSize: 12,
+                padding: '3px 10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              title={`Total premiums paid till date: ${formatCurrency(cumulative.totalPaid)} (${cumulative.label})`}
+            >
+              💰 Total Paid: <strong>{formatCurrency(cumulative.totalPaid)}</strong>
+              <span style={{ fontWeight: 500, opacity: 0.85, fontSize: 11 }}>
+                ({cumulative.count} {policy.premiumFrequency === 'Yearly' ? (cumulative.count === 1 ? 'yr' : 'yrs') : 'inst.'})
+              </span>
+            </span>
+
+            {timeline.isPremiumCompleted ? (
+              <span className="badge badge-green" style={{ fontSize: 11, padding: '3px 8px' }}>
+                ✓ Premium Completed
+              </span>
+            ) : timeline.payingTerm ? (
+              <span className="badge" style={{ background: 'rgba(245,158,11,0.15)', color: 'var(--accent-amber)', fontSize: 11, padding: '3px 8px', fontWeight: 600 }}>
+                ⏳ PPT: {timeline.payingTerm} yrs (Pay till {timeline.calculatedPayEndDate ? formatDate(timeline.calculatedPayEndDate) : '—'})
+              </span>
+            ) : null}
+
+            {timeline.policyTerm ? (
+              <span className="badge" style={{ background: 'rgba(6,182,212,0.15)', color: 'var(--accent-cyan)', fontSize: 11, padding: '3px 8px', fontWeight: 600 }}>
+                🎯 Term: {timeline.policyTerm} yrs {timeline.calculatedMaturityDate ? `(Payout ${formatDate(timeline.calculatedMaturityDate)})` : ''}
+              </span>
+            ) : null}
           </div>
 
-          <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
+          <div style={{ display: 'flex', gap: 14, marginTop: 5, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
             <span>🏢 <strong>{policy.insurer}</strong></span>
             {policy.holderName && <span>👤 Holder: <strong>{policy.holderName}</strong></span>}
             {policy.premiumAmount && (
               <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
-                {formatCurrency(policy.premiumAmount)} / {policy.premiumFrequency}
+                💵 Premium: {formatCurrency(policy.premiumAmount)} / {policy.premiumFrequency}
+              </span>
+            )}
+            {policy.startDate && (
+              <span>📅 Since: <strong>{formatDate(policy.startDate)}</strong></span>
+            )}
+            {timeline.calculatedMaturityDate && (
+              <span style={{ color: 'var(--accent-cyan)' }}>
+                🎯 Expect Money: <strong>{formatDate(timeline.calculatedMaturityDate)}</strong> {timeline.yearsUntilMaturity !== null ? `(${timeline.yearsUntilMaturity > 0 ? `${timeline.yearsUntilMaturity} yrs` : 'Matured'})` : ''}
               </span>
             )}
             {policy.sumAssured && (
-              <span>SA: {formatCurrency(policy.sumAssured)}</span>
+              <span>🛡️ SA: {formatCurrency(policy.sumAssured)}</span>
             )}
             {days !== null && days <= 30 && (
               <span style={{ color: days <= 7 ? 'var(--accent-red)' : 'var(--accent-amber)', fontWeight: 600 }}>
@@ -886,27 +1167,126 @@ function PolicyCard({ policy, onEdit, onDelete, onTogglePayment }) {
       {/* Expanded details */}
       {expanded && (
         <div className="vehicle-card-body">
-          <div className="grid-cols-3 gap-12 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+          <div className="grid-cols-4 gap-12 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
             <div>
               <div className="text-sm text-muted">Policy Number</div>
               <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)' }}>{policy.policyNumber || '—'}</div>
               <div className="text-sm text-secondary">Nominee: {policy.nominee || '—'}</div>
             </div>
+            <div style={{ borderLeft: '2px solid rgba(99,102,241,0.4)', paddingLeft: 10 }}>
+              <div className="text-sm text-muted">Total Paid Till Date</div>
+              <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--accent-indigo)' }}>
+                {formatCurrency(cumulative.totalPaid)}
+              </div>
+              <div className="text-sm text-secondary">
+                {cumulative.label} {cumulative.isManual ? '(custom record)' : (policy.startDate ? `(from ${formatDate(policy.startDate)})` : '')}
+              </div>
+            </div>
             <div>
-              <div className="text-sm text-muted">Maturity Expectation</div>
+              <div className="text-sm text-muted">When to Expect Money (Maturity)</div>
               <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent-cyan)' }}>
                 {policy.maturityAmount ? formatCurrency(policy.maturityAmount) : '—'}
               </div>
-              <div className="text-sm text-secondary">Maturity: {policy.maturityDate ? formatDate(policy.maturityDate) : '—'}</div>
+              <div className="text-sm text-secondary">
+                {timeline.calculatedMaturityDate ? formatDate(timeline.calculatedMaturityDate) : '—'}
+                {timeline.yearsUntilMaturity !== null ? ` (${timeline.yearsUntilMaturity > 0 ? `${timeline.yearsUntilMaturity} yrs away` : 'Matured'})` : ''}
+              </div>
             </div>
             <div>
-              <div className="text-sm text-muted">Pay-Till & Next Due</div>
-              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--accent-amber)' }}>
-                Next: {policy.nextDueDate ? formatDate(policy.nextDueDate) : '—'}
+              <div className="text-sm text-muted">Premium Paying Schedule</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: timeline.isPremiumCompleted ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
+                {timeline.isPremiumCompleted ? '✓ All Premiums Completed' : `Pay till: ${timeline.calculatedPayEndDate ? formatDate(timeline.calculatedPayEndDate) : '—'}`}
               </div>
-              <div className="text-sm text-secondary">Pay till: {policy.paymentEndDate ? formatDate(policy.paymentEndDate) : '—'}</div>
+              <div className="text-sm text-secondary">
+                {timeline.payingTerm ? `PPT: ${timeline.payingTerm} yrs` : ''}
+                {timeline.remainingCommitment !== null && !timeline.isPremiumCompleted ? ` · ${formatCurrency(timeline.remainingCommitment)} left` : ''}
+              </div>
             </div>
           </div>
+
+          {/* Policy Lifecycle & Cashflow Timeline */}
+          <div style={{
+            background: 'var(--bg-base)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-subtle)',
+            padding: '14px 16px',
+            marginBottom: 14
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+              Policy Terms &amp; Cashflow Timeline (Paying Term vs Policy Term)
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+              {/* Stage 1: Premium Paying Term */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent-indigo)' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>1. PREMIUM PAYING TERM (PPT)</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)', marginTop: 2 }}>
+                  {timeline.payingTerm ? `${timeline.payingTerm} Years` : 'Ongoing'}
+                  {timeline.isPremiumCompleted ? <span style={{ color: 'var(--accent-green)', marginLeft: 6, fontSize: 12 }}>✓ Completed</span> : ''}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                  {timeline.isPremiumCompleted
+                    ? `Completed on ${formatDate(timeline.calculatedPayEndDate)} (${cumulative.count} installments paid)`
+                    : `Pay till ${timeline.calculatedPayEndDate ? formatDate(timeline.calculatedPayEndDate) : '—'}${timeline.remainingCommitment !== null ? ` · ${formatCurrency(timeline.remainingCommitment)} remaining` : ''}`}
+                </div>
+              </div>
+
+              {/* Stage 2: Accumulation & Compounding */}
+              {timeline.policyTerm && timeline.payingTerm && Number(timeline.policyTerm) > Number(timeline.payingTerm) && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent-amber)' }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>2. ACCUMULATION PERIOD</div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-amber)', marginTop: 2 }}>
+                    {Number(timeline.policyTerm) - Number(timeline.payingTerm)} Years Growth
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                    Zero premiums payable from {timeline.calculatedPayEndDate ? formatDate(timeline.calculatedPayEndDate) : 'end of PPT'} until maturity
+                  </div>
+                </div>
+              )}
+
+              {/* Stage 3: Policy Maturity & Payout */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: 10, borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent-cyan)' }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>3. EXPECT MONEY (MATURITY)</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent-cyan)', marginTop: 2 }}>
+                  {policy.maturityAmount ? formatCurrency(policy.maturityAmount) : 'Maturity Payout'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3 }}>
+                  {timeline.calculatedMaturityDate ? `Expect payout on ${formatDate(timeline.calculatedMaturityDate)}` : 'Maturity date not set'}
+                  {timeline.yearsUntilMaturity !== null ? ` (${timeline.yearsUntilMaturity > 0 ? `${timeline.yearsUntilMaturity} yrs from now` : 'Matured'})` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {cumulative.totalPaid > 0 && Number(policy.maturityAmount) > 0 && (
+            <div style={{
+              background: 'rgba(255,255,255,0.03)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 14px',
+              marginBottom: 14,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12,
+              fontSize: 13
+            }}>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Capital Deposited: </span>
+                <strong style={{ color: 'var(--accent-indigo)' }}>{formatCurrency(cumulative.totalPaid)}</strong>
+                <span style={{ color: 'var(--text-muted)', margin: '0 8px' }}>|</span>
+                <span style={{ color: 'var(--text-muted)' }}>Expected Return at Maturity: </span>
+                <strong style={{ color: 'var(--accent-cyan)' }}>{formatCurrency(policy.maturityAmount)}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-muted)' }}>Estimated Net Gain: </span>
+                <strong style={{ color: Number(policy.maturityAmount) >= cumulative.totalPaid ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+                  {Number(policy.maturityAmount) >= cumulative.totalPaid ? '+' : ''}
+                  {formatCurrency(Number(policy.maturityAmount) - cumulative.totalPaid)}
+                </strong>
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 14, fontSize: 13, color: 'var(--text-secondary)' }}>
             {policy.otpPhone && (
@@ -961,6 +1341,17 @@ function PortfolioCard({ item, onEdit, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const days = item.maturityDate ? daysUntil(item.maturityDate) : null;
 
+  const cumulative = calculateCumulativeInvestment({
+    startDate: item.startDate,
+    amount: item.amount,
+    frequency: item.frequency,
+    endDate: item.maturityDate
+  });
+
+  const curVal = Number(item.currentValue || (item.frequency === 'One-Time' ? item.amount : cumulative.totalPaid) || 0);
+  const pnl = curVal - cumulative.totalPaid;
+  const pnlPct = cumulative.totalPaid > 0 ? ((pnl / cumulative.totalPaid) * 100).toFixed(1) : 0;
+
   return (
     <div className="vehicle-card" style={{ marginBottom: 10 }}>
       <div className="vehicle-card-header" onClick={() => setExpanded(e => !e)}>
@@ -979,6 +1370,11 @@ function PortfolioCard({ item, onEdit, onDelete }) {
             {item.amount && (
               <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>
                 {formatCurrency(item.amount)}{item.frequency && item.frequency !== 'One-Time' ? ` / ${item.frequency}` : ''}
+              </span>
+            )}
+            {cumulative.totalPaid > 0 && item.frequency !== 'One-Time' && (
+              <span style={{ color: 'var(--accent-indigo)', fontWeight: 600 }} title={`Calculated across ${cumulative.count} installments since ${formatDate(item.startDate)}`}>
+                💰 Invested: <strong>{formatCurrency(cumulative.totalPaid)}</strong> ({cumulative.count} {item.frequency === 'Yearly' ? 'yr' : 'mo'})
               </span>
             )}
             {item.currentValue && (
@@ -1017,23 +1413,35 @@ function PortfolioCard({ item, onEdit, onDelete }) {
 
       {expanded && (
         <div className="vehicle-card-body">
-          <div className="grid-cols-3 gap-12" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+          <div className="grid-cols-4 gap-12" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
             <div>
               <div className="text-sm text-muted">Account / Folio</div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{item.accountNumber || '—'}</div>
               <div className="text-sm text-secondary">Started: {item.startDate ? formatDate(item.startDate) : '—'}</div>
             </div>
             <div>
-              <div className="text-sm text-muted">Maturity Date</div>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{item.maturityDate ? formatDate(item.maturityDate) : '—'}</div>
-              <div className="text-sm text-secondary">
-                {days !== null ? (days >= 0 ? `${days} days left` : 'Matured') : 'No maturity date'}
+              <div className="text-sm text-muted">Capital Invested Till Date</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent-indigo)' }}>
+                {formatCurrency(cumulative.totalPaid)}
               </div>
+              <div className="text-sm text-secondary">{cumulative.label}</div>
             </div>
             <div>
-              <div className="text-sm text-muted">Expected Annual Return</div>
-              <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--accent-green)' }}>
-                {item.expectedReturn ? `${item.expectedReturn}% / yr` : '—'}
+              <div className="text-sm text-muted">Current Valuation &amp; P&amp;L</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent-green)' }}>
+                {item.currentValue ? formatCurrency(item.currentValue) : formatCurrency(cumulative.totalPaid)}
+              </div>
+              {item.currentValue && (
+                <div className="text-sm" style={{ color: pnl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)', fontWeight: 600 }}>
+                  {pnl >= 0 ? '+' : ''}{formatCurrency(pnl)} ({pnl >= 0 ? '+' : ''}{pnlPct}%)
+                </div>
+              )}
+            </div>
+            <div>
+              <div className="text-sm text-muted">Maturity / Returns</div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{item.maturityDate ? formatDate(item.maturityDate) : 'Ongoing'}</div>
+              <div className="text-sm text-secondary">
+                {item.expectedReturn ? `${item.expectedReturn}% / yr expected` : (days !== null ? `${days} days left` : '—')}
               </div>
             </div>
           </div>
@@ -1624,6 +2032,31 @@ export default function Investments({ investments, updateInvestments }) {
   }, 0);
   const totalSumAssured = policies.reduce((sum, p) => sum + Number(p.sumAssured || 0), 0);
   const totalPortfolioVal = portfolio.reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
+
+  const totalPortfolioInvested = portfolio.reduce((sum, item) => {
+    const c = calculateCumulativeInvestment({
+      startDate: item.startDate,
+      amount: item.amount,
+      frequency: item.frequency,
+      endDate: item.maturityDate
+    });
+    return sum + c.totalPaid;
+  }, 0);
+
+  const totalPoliciesPaid = policies.reduce((sum, p) => {
+    const c = calculateCumulativeInvestment({
+      startDate: p.startDate,
+      amount: p.premiumAmount,
+      frequency: p.premiumFrequency,
+      paymentEndDate: p.paymentEndDate,
+      paymentHistory: p.paymentHistory,
+      alreadyPaid: p.alreadyPaid
+    });
+    return sum + c.totalPaid;
+  }, 0);
+
+  const totalCumulativeAll = totalPortfolioInvested + totalPoliciesPaid;
+
   const totalPrincipalLent = loansGiven
     .filter(l => l.status === 'Active')
     .reduce((sum, l) => sum + Number(l.principalAmount || 0), 0);
@@ -1658,7 +2091,7 @@ export default function Investments({ investments, updateInvestments }) {
           </div>
           <div className="stat-label">Annual Insurance Outflow</div>
           <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(Math.round(totalAnnualPremium))}</div>
-          <div className="stat-sub">Combined yearly premium</div>
+          <div className="stat-sub">{formatCurrency(totalPoliciesPaid)} paid in total till date</div>
         </div>
 
         <div className="stat-card">
@@ -1676,7 +2109,7 @@ export default function Investments({ investments, updateInvestments }) {
           </div>
           <div className="stat-label">Portfolio &amp; Lent Assets</div>
           <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(totalPortfolioVal + totalPrincipalLent)}</div>
-          <div className="stat-sub">{portfolio.length} investments · {loansGiven.length} loans</div>
+          <div className="stat-sub">{formatCurrency(totalCumulativeAll)} deposited till date</div>
         </div>
       </div>
 
@@ -1720,6 +2153,55 @@ export default function Investments({ investments, updateInvestments }) {
       {/* ── Tab 1: Policies ─────────────────────────────────────────── */}
       {tab === 'policies' && (
         <div>
+          {/* Insurance Policies Accumulated Overview */}
+          {policies.length > 0 && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(14,165,233,0.08) 100%)',
+              border: '1px solid rgba(99,102,241,0.25)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '16px 20px',
+              marginBottom: 18,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 16
+            }}>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-indigo)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Shield size={14} /> Total Policy Premiums Paid (Till Date)
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', marginTop: 2 }}>
+                  {formatCurrency(totalPoliciesPaid)}
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Accumulated across all {policies.length} insurance policies based on tenure elapsed &amp; premiums
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Annual Outflow</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-red)' }}>
+                    {formatCurrency(Math.round(totalAnnualPremium))} / yr
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Maturity Expected</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-cyan)' }}>
+                    {formatCurrency(policies.reduce((sum, p) => sum + Number(p.maturityAmount || 0), 0))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Protection Cover</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent-green)' }}>
+                    {formatCurrency(totalSumAssured)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Search & Actions Bar */}
           <div className="flex gap-10 mb-16 flex-wrap items-center">
             <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
@@ -1790,6 +2272,123 @@ export default function Investments({ investments, updateInvestments }) {
       {tab === 'portfolio' && (
         <div>
           <SwpPanel investments={investments} updateInvestments={updateInvestments} />
+
+          {/* Cumulative Contributions & Policies Total Paid Overview */}
+          <div className="card mb-20" style={{ border: '1px solid rgba(99,102,241,0.25)', background: 'linear-gradient(135deg, rgba(99,102,241,0.05) 0%, var(--bg-card) 100%)' }}>
+            <div className="section-header" style={{ marginBottom: 14 }}>
+              <div>
+                <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <TrendingUp size={18} color="var(--accent-indigo)" />
+                  Cumulative Investment &amp; Policy Contributions (Till Date)
+                </div>
+                <div className="section-subtitle">
+                  Total capital deposited across recurring SIPs, PPF, FDs, and annual/monthly Insurance Policies since inception
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 16 }}>
+              <div className="stat-card" style={{ padding: '14px 16px' }}>
+                <div className="stat-label">Total Capital Deposited (All)</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-indigo)' }}>
+                  {formatCurrency(totalCumulativeAll)}
+                </div>
+                <div className="stat-sub">
+                  Portfolio: {formatCurrency(totalPortfolioInvested)} + Policies: {formatCurrency(totalPoliciesPaid)}
+                </div>
+              </div>
+
+              <div className="stat-card" style={{ padding: '14px 16px' }}>
+                <div className="stat-label">Market Portfolio Valuation</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-cyan)' }}>
+                  {formatCurrency(totalPortfolioVal)}
+                </div>
+                <div className="stat-sub">{portfolio.length} holdings tracked</div>
+              </div>
+
+              <div className="stat-card" style={{ padding: '14px 16px' }}>
+                <div className="stat-label">Policies Paid Till Date</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-green)' }}>
+                  {formatCurrency(totalPoliciesPaid)}
+                </div>
+                <div className="stat-sub">{policies.length} policies accumulated</div>
+              </div>
+
+              <div className="stat-card" style={{ padding: '14px 16px' }}>
+                <div className="stat-label">Combined Assets &amp; Savings</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {formatCurrency(totalPortfolioVal + totalPoliciesPaid)}
+                </div>
+                <div className="stat-sub">Portfolio Value + Policies Paid</div>
+              </div>
+            </div>
+
+            {/* Policies Summary Drawer / List */}
+            {policies.length > 0 && (
+              <div style={{ background: 'var(--bg-base)', padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                    🛡️ Insurance Policies — Accumulated Premiums Paid (e.g. ₹50k/yr since 2019)
+                  </span>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    style={{ fontSize: 11, padding: '2px 8px' }}
+                    onClick={() => setTab('policies')}
+                  >
+                    View All Policies →
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {policies.map(p => {
+                    const c = calculateCumulativeInvestment({
+                      startDate: p.startDate,
+                      amount: p.premiumAmount,
+                      frequency: p.premiumFrequency,
+                      paymentEndDate: p.paymentEndDate,
+                      paymentHistory: p.paymentHistory,
+                      alreadyPaid: p.alreadyPaid
+                    });
+
+                    return (
+                      <div
+                        key={p.id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 12px',
+                          background: 'rgba(255,255,255,0.03)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: 13,
+                          flexWrap: 'wrap',
+                          gap: 8
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontWeight: 600 }}>{p.policyName || 'Unnamed Policy'}</span>
+                          <span className="badge badge-muted" style={{ marginLeft: 8, fontSize: 10 }}>{p.insurer}</span>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {formatCurrency(p.premiumAmount)} / {p.premiumFrequency}
+                            {p.startDate ? ` · Started ${formatDate(p.startDate)}` : ''}
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontWeight: 700, color: 'var(--accent-indigo)' }}>
+                            {formatCurrency(c.totalPaid)}
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                            {c.count} {p.premiumFrequency === 'Yearly' ? 'annual premium' : 'installment'}{c.count !== 1 ? 's' : ''} paid
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="flex gap-10 mb-16 flex-wrap items-center">
             <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>

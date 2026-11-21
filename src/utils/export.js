@@ -1,5 +1,8 @@
 import * as XLSX from 'xlsx';
-import { formatDate, formatCurrency, monthLabel, calculatePendingLoan, getRemainingMonthsCount } from './storage';
+import {
+  formatDate, formatCurrency, monthLabel, calculatePendingLoan,
+  getRemainingMonthsCount, calculateCumulativeInvestment
+} from './storage';
 
 export const exportToExcel = (vehicles, rooms, investments, finances) => {
   const wb = XLSX.utils.book_new();
@@ -178,47 +181,72 @@ export const exportToExcel = (vehicles, rooms, investments, finances) => {
   }
 
   // ── Sheet 7: Insurance Policies ───────────────────────────────────────
-  const policyRows = (investments?.policies || []).map(p => ({
-    'Policy Name': p.policyName || '',
-    'Policy Number': p.policyNumber || '',
-    Insurer: p.insurer || '',
-    Type: p.type || '',
-    'Holder Name': p.holderName || '',
-    Nominee: p.nominee || '',
-    Status: p.status || '',
-    'Sum Assured': p.sumAssured || '',
-    'Maturity Amount': p.maturityAmount || '',
-    'Premium Amount': p.premiumAmount || '',
-    'Premium Frequency': p.premiumFrequency || '',
-    'Start Date': formatDate(p.startDate),
-    'Maturity Date': formatDate(p.maturityDate),
-    'Pay Till Date': formatDate(p.paymentEndDate),
-    'Next Due Date': formatDate(p.nextDueDate),
-    'OTP Phone': p.otpPhone || '',
-    'Agent Name': p.agentName || '',
-    'Agent Phone': p.agentPhone || '',
-    Notes: p.notes || '',
-  }));
+  const policyRows = (investments?.policies || []).map(p => {
+    const c = calculateCumulativeInvestment({
+      startDate: p.startDate,
+      amount: p.premiumAmount,
+      frequency: p.premiumFrequency,
+      paymentEndDate: p.paymentEndDate,
+      paymentHistory: p.paymentHistory,
+      alreadyPaid: p.alreadyPaid
+    });
+
+    return {
+      'Policy Name': p.policyName || '',
+      'Policy Number': p.policyNumber || '',
+      Insurer: p.insurer || '',
+      Type: p.type || '',
+      'Holder Name': p.holderName || '',
+      Nominee: p.nominee || '',
+      Status: p.status || '',
+      'Sum Assured': p.sumAssured || '',
+      'Maturity Amount': p.maturityAmount || '',
+      'Premium Amount': p.premiumAmount || '',
+      'Premium Frequency': p.premiumFrequency || '',
+      'Paying Term (Yrs)': p.payingTerm || '',
+      'Policy Term (Yrs)': p.policyTerm || '',
+      'Total Paid Till Date (₹)': c.totalPaid,
+      'Installments Count': c.count,
+      'Start Date': formatDate(p.startDate),
+      'Maturity Date': formatDate(p.maturityDate),
+      'Pay Till Date': formatDate(p.paymentEndDate),
+      'Next Due Date': formatDate(p.nextDueDate),
+      'OTP Phone': p.otpPhone || '',
+      'Agent Name': p.agentName || '',
+      'Agent Phone': p.agentPhone || '',
+      Notes: p.notes || '',
+    };
+  });
   if (policyRows.length) {
     const ws7 = XLSX.utils.json_to_sheet(policyRows);
     XLSX.utils.book_append_sheet(wb, ws7, 'Insurance Policies');
   }
 
   // ── Sheet 8: Portfolio ─────────────────────────────────────────────────
-  const portfolioRows = (investments?.portfolio || []).map(p => ({
-    Type: p.type || '',
-    Name: p.name || '',
-    Platform: p.platform || '',
-    'Account/Folio': p.accountNumber || '',
-    'Amount (₹)': p.amount || '',
-    Frequency: p.frequency || '',
-    'Start Date': formatDate(p.startDate),
-    'Maturity Date': formatDate(p.maturityDate),
-    'Expected Return %': p.expectedReturn || '',
-    'Current Value': p.currentValue || '',
-    Status: p.status || '',
-    Notes: p.notes || '',
-  }));
+  const portfolioRows = (investments?.portfolio || []).map(p => {
+    const c = calculateCumulativeInvestment({
+      startDate: p.startDate,
+      amount: p.amount,
+      frequency: p.frequency,
+      endDate: p.maturityDate
+    });
+
+    return {
+      Type: p.type || '',
+      Name: p.name || '',
+      Platform: p.platform || '',
+      'Account/Folio': p.accountNumber || '',
+      'Amount (₹)': p.amount || '',
+      Frequency: p.frequency || '',
+      'Total Invested Till Date (₹)': c.totalPaid,
+      'Start Date': formatDate(p.startDate),
+      'Maturity Date': formatDate(p.maturityDate),
+      'Expected Return %': p.expectedReturn || '',
+      'Current Value': p.currentValue || '',
+      Status: p.status || '',
+      Notes: p.notes || '',
+    };
+  });
   if (portfolioRows.length) {
     const ws8 = XLSX.utils.json_to_sheet(portfolioRows);
     XLSX.utils.book_append_sheet(wb, ws8, 'Portfolio');
