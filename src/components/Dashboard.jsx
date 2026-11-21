@@ -195,7 +195,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
     }, 0);
   }, [investments?.policies]);
 
-  // ── Monthly Outflow Calculations (EMIs + Policies Due + SIPs + CC) ─────
+  // ── Monthly Outflow Calculations (EMIs + Policies Due + SIPs + CC + Recurring Rent/Bills) ─────
   const monthlyObligations = useMemo(() => {
     let policyDueTotal = 0;
     const duePolicies = [];
@@ -216,15 +216,23 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       }
     });
 
+    let recurringDueTotal = 0;
+    (finances?.recurringExpenses || []).forEach(e => {
+      if (e.status !== 'Paused') {
+        recurringDueTotal += Number(e.amount || 0);
+      }
+    });
+
     return {
       emiTotal: loanStats.totalMonthlyEmi,
       policyDueTotal,
       sipsDueTotal,
       ccDueTotal: ccObligations.totalDue,
-      totalOutflow: loanStats.totalMonthlyEmi + policyDueTotal + sipsDueTotal + ccObligations.totalDue,
+      recurringDueTotal,
+      totalOutflow: loanStats.totalMonthlyEmi + policyDueTotal + sipsDueTotal + ccObligations.totalDue + recurringDueTotal,
       duePolicies
     };
-  }, [loanStats.totalMonthlyEmi, investments, ccObligations.totalDue, thisMonth]);
+  }, [loanStats.totalMonthlyEmi, investments, ccObligations.totalDue, finances?.recurringExpenses, thisMonth]);
 
   // ── Monthly P&L Summary ───────────────────────────────────────────────
   const monthlyPL = useMemo(() => {
@@ -402,6 +410,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                 EMIs: {formatCurrency(monthlyObligations.emiTotal)} · Policies/SIPs: {formatCurrency(monthlyObligations.policyDueTotal + monthlyObligations.sipsDueTotal)}
+                {monthlyObligations.recurringDueTotal > 0 && ` · Rent/Bills: ${formatCurrency(monthlyObligations.recurringDueTotal)}`}
                 {monthlyObligations.ccDueTotal > 0 && ` · CC: ${formatCurrency(monthlyObligations.ccDueTotal)}`}
               </div>
             </div>

@@ -3,7 +3,8 @@ import {
   CreditCard, IndianRupee, TrendingUp, Calendar, AlertTriangle,
   Plus, Edit2, Trash2, Check, X,
   PieChart, ArrowUpRight, ArrowDownRight, Sparkles, Shield,
-  Clock, DollarSign, Wallet
+  Clock, DollarSign, Wallet, Home, Receipt, Search,
+  ChevronDown, ChevronUp, Tag
 } from 'lucide-react';
 import {
   genId, formatDate, formatCurrency, currentMonthKey, monthLabel,
@@ -230,15 +231,383 @@ function CardEmiModal({ onSave, onClose }) {
   );
 }
 
+// ─── Recurring Expense Presets & Helpers ─────────────────────────────────────
+const blankExpense = () => ({
+  id: genId(),
+  title: '',
+  amount: '',
+  category: 'Rent & Housing',
+  dueDay: 5,
+  payee: '',
+  status: 'Active',
+  notes: '',
+  history: {}
+});
+
+const DEFAULT_EXPENSE_SUGGESTIONS = [
+  { title: 'Flat Rent', category: 'Rent & Housing', dueDay: 5, icon: '🏠' },
+  { title: 'Society Maintenance', category: 'Rent & Housing', dueDay: 1, icon: '🏢' },
+  { title: 'Electricity Bill', category: 'Utilities', dueDay: 10, icon: '⚡' },
+  { title: 'Maid / Cook Salary', category: 'Household', dueDay: 1, icon: '🧹' },
+  { title: 'Wi-Fi & Broadband', category: 'Utilities', dueDay: 15, icon: '📶' },
+  { title: 'Gym & Fitness', category: 'Lifestyle', dueDay: 1, icon: '🏋️' },
+  { title: 'Water / Piped Gas', category: 'Utilities', dueDay: 12, icon: '💧' },
+  { title: 'OTT Subscriptions', category: 'Subscriptions', dueDay: 20, icon: '📺' },
+];
+
+const EXPENSE_CATEGORIES = [
+  'Rent & Housing',
+  'Utilities',
+  'Household',
+  'Lifestyle',
+  'Subscriptions',
+  'Education',
+  'Other'
+];
+
+function ExpenseModal({ expense, onSave, onClose }) {
+  const [form, setForm] = useState(expense || blankExpense());
+  const [customCat, setCustomCat] = useState('');
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const isStandardCat = EXPENSE_CATEGORIES.includes(form.category);
+  const selectedCat = isStandardCat ? form.category : 'Other';
+
+  const handleSave = () => {
+    if (!form.title?.trim() || !form.amount) return;
+    const finalCat = selectedCat === 'Other' ? (customCat.trim() || 'Other') : form.category;
+    onSave({ ...form, title: form.title.trim(), category: finalCat });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Home size={18} color="var(--accent-indigo)" />
+            {expense?.id ? 'Edit Recurring Expense' : 'Add Recurring Expense / Rent'}
+          </div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="modal-body">
+          {/* Quick Suggestions / Presets */}
+          <div style={{ marginBottom: 14 }}>
+            <div className="text-sm text-muted" style={{ marginBottom: 6 }}>
+              Quick Presets (click to autofill, or type custom name below):
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {DEFAULT_EXPENSE_SUGGESTIONS.map(s => (
+                <button
+                  key={s.title}
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '3px 9px', fontSize: 11, borderRadius: 'var(--radius-full)' }}
+                  onClick={() => {
+                    set('title', s.title);
+                    set('category', s.category);
+                    set('dueDay', s.dueDay);
+                  }}
+                >
+                  {s.icon} {s.title}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Expense Name / Title *</label>
+              <input
+                className="form-input"
+                value={form.title}
+                onChange={e => set('title', e.target.value)}
+                placeholder="e.g. Flat Rent, Society Maintenance, Maid Salary..."
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Monthly Amount (₹) *</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.amount}
+                onChange={e => set('amount', e.target.value)}
+                placeholder="e.g. 25000"
+              />
+            </div>
+          </div>
+
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Category</label>
+              <select
+                className="form-input"
+                value={selectedCat}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (val === 'Other') {
+                    set('category', 'Other');
+                  } else {
+                    set('category', val);
+                  }
+                }}
+              >
+                {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              {selectedCat === 'Other' && (
+                <input
+                  className="form-input"
+                  style={{ marginTop: 6 }}
+                  value={customCat}
+                  onChange={e => {
+                    setCustomCat(e.target.value);
+                    set('category', e.target.value || 'Other');
+                  }}
+                  placeholder="Type category..."
+                  autoFocus
+                />
+              )}
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Due Day of Month</label>
+              <input
+                className="form-input"
+                type="number"
+                min={1}
+                max={31}
+                value={form.dueDay}
+                onChange={e => set('dueDay', e.target.value)}
+                placeholder="e.g. 5"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select
+                className="form-input"
+                value={form.status}
+                onChange={e => set('status', e.target.value)}
+              >
+                <option value="Active">Active (Monthly)</option>
+                <option value="Paused">Paused / Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Landlord / Payee Name or UPI ID</label>
+            <input
+              className="form-input"
+              value={form.payee}
+              onChange={e => set('payee', e.target.value)}
+              placeholder="e.g. Landlord Sharma Ji / landlord@okhdfcbank"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Notes &amp; Details</label>
+            <textarea
+              className="form-input"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="e.g. Agreement till Dec 2027, includes maintenance, security deposit ₹50k..."
+              style={{ minHeight: 60 }}
+            />
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!form.title?.trim() || !form.amount}
+          >
+            <Check size={14} /> Save Expense
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExpenseCard({ expense, onEdit, onDelete, onTogglePaid }) {
+  const [expanded, setExpanded] = useState(false);
+  const months12 = getLast12Months();
+  const curMonth = currentMonthKey();
+  const currentRecord = expense.history?.[curMonth];
+  const isCurrentPaid = currentRecord?.status === 'Paid';
+
+  const totalPaidLifetime = Object.values(expense.history || {}).reduce((s, h) => {
+    return h?.status === 'Paid' ? s + Number(h.amount || expense.amount || 0) : s;
+  }, 0);
+  const totalMonthsPaid = Object.values(expense.history || {}).filter(h => h?.status === 'Paid').length;
+
+  return (
+    <div className="vehicle-card" style={{ marginBottom: 12 }}>
+      <div className="vehicle-card-header" onClick={() => setExpanded(e => !e)}>
+        <div className="vehicle-icon" style={{ background: 'rgba(99,102,241,0.15)' }}>
+          <Home size={22} color="var(--accent-indigo)" />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>{expense.title}</span>
+            <span className={`badge ${expense.status === 'Active' ? 'badge-green' : 'badge-muted'}`}>
+              {expense.status || 'Active'}
+            </span>
+            {expense.category && (
+              <span className="badge badge-muted">{expense.category}</span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
+            <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
+              {formatCurrency(expense.amount)} / month
+            </span>
+            {expense.dueDay && <span>📅 Due on {expense.dueDay}th</span>}
+            {expense.payee && <span>👤 Payee: <strong>{expense.payee}</strong></span>}
+          </div>
+        </div>
+
+        {/* Current Month Quick Toggle Pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>
+          <button
+            className={`btn btn-sm ${isCurrentPaid ? 'btn-success' : 'btn-secondary'}`}
+            style={{
+              padding: '4px 10px',
+              fontSize: 12,
+              borderRadius: 'var(--radius-full)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              borderColor: isCurrentPaid ? 'var(--accent-green)' : 'var(--border-subtle)',
+              background: isCurrentPaid ? 'rgba(16,185,129,0.15)' : 'var(--bg-surface)'
+            }}
+            onClick={() => onTogglePaid(expense.id, curMonth)}
+            title={`Toggle payment for ${monthLabel(curMonth)}`}
+          >
+            {isCurrentPaid ? (
+              <>
+                <Check size={13} color="var(--accent-green)" />
+                <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>{monthLabel(curMonth).split(' ')[0]}: Paid</span>
+              </>
+            ) : (
+              <>
+                <Clock size={13} color="var(--accent-amber)" />
+                <span style={{ color: 'var(--text-secondary)' }}>{monthLabel(curMonth).split(' ')[0]}: Mark Paid</span>
+              </>
+            )}
+          </button>
+
+          <button
+            className="btn btn-secondary btn-icon btn-sm"
+            onClick={() => onEdit(expense)}
+            title="Edit Expense"
+          >
+            <Edit2 size={13} />
+          </button>
+          <button
+            className="btn btn-danger btn-icon btn-sm"
+            onClick={() => onDelete(expense.id)}
+            title="Delete Expense"
+          >
+            <Trash2 size={13} />
+          </button>
+          <div onClick={() => setExpanded(e => !e)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            {expanded ? <ChevronUp size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <div className="vehicle-card-body">
+          <div className="grid-cols-3 gap-12 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+            <div>
+              <div className="text-sm text-muted">Total Paid Tracked</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent-red)' }}>
+                {formatCurrency(totalPaidLifetime)}
+              </div>
+              <div className="text-sm text-secondary">
+                {totalMonthsPaid} month{totalMonthsPaid !== 1 ? 's' : ''} recorded paid
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Payee / Account Details</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                {expense.payee || '—'}
+              </div>
+              <div className="text-sm text-secondary">Due {expense.dueDay}th of every month</div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Expense Category</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--accent-indigo)' }}>
+                {expense.category || 'General'}
+              </div>
+              <div className="text-sm text-secondary">Status: {expense.status || 'Active'}</div>
+            </div>
+          </div>
+
+          {expense.notes && (
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', marginBottom: 14, fontSize: 13, color: 'var(--text-secondary)' }}>
+              <strong>📝 Notes &amp; Terms:</strong> {expense.notes}
+            </div>
+          )}
+
+          {/* 12-Month Payment History Grid */}
+          <div>
+            <div className="flex justify-between items-center mb-8">
+              <span className="text-sm text-secondary">
+                Payment History Tracker (Click to mark Paid / Pending)
+              </span>
+              <span className="text-sm text-muted">Current: {monthLabel(curMonth)}</span>
+            </div>
+
+            <div className="month-grid">
+              {months12.map(month => {
+                const rec = expense.history?.[month];
+                const isPaid = rec?.status === 'Paid';
+                const isPending = rec?.status === 'Pending';
+                const cls = isPaid ? 'month-cell-paid' : isPending ? 'month-cell-unpaid' : 'month-cell-none';
+
+                return (
+                  <div
+                    key={month}
+                    className={`month-cell ${cls}`}
+                    onClick={() => onTogglePaid(expense.id, month)}
+                    title={`${monthLabel(month)}: ${isPaid ? 'Paid' : isPending ? 'Pending' : 'Click to toggle'}`}
+                  >
+                    <div>{monthLabel(month).split(' ')[0].substring(0, 3)}</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>{monthLabel(month).split(' ')[1]}</div>
+                    {isPaid && <Check size={10} style={{ marginTop: 2, display: 'inline' }} />}
+                    {isPending && <Clock size={10} style={{ marginTop: 2, display: 'inline', color: 'var(--accent-amber)' }} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component: Finances ─────────────────────────────────────────────────
 export default function Finances({ finances = {}, updateFinances, vehicles = [], investments = {} }) {
-  const [tab, setTab] = useState('projection'); // 'projection' | 'cards' | 'salary'
-  const [modal, setModal] = useState(null); // { type: 'card', card } | { type: 'emi', cardId }
+  const [tab, setTab] = useState('projection'); // 'projection' | 'recurring' | 'cards' | 'salary'
+  const [modal, setModal] = useState(null); // { type: 'card', card } | { type: 'emi', cardId } | { type: 'expense', expense }
 
   const creditCards = finances.creditCards || [];
+  const recurringExpenses = finances.recurringExpenses || [];
   const salary = finances.salary || { amount: 0, company: '', payDay: 1, history: {} };
   const thisMonth = currentMonthKey();
   const months12 = getLast12Months();
+
+  const [expenseSearch, setExpenseSearch] = useState('');
+  const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('');
 
   // Purge any corrupted/legacy parsed expenses so strange numbers are cleared
   useMemo(() => {
@@ -246,6 +615,61 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
       setTimeout(() => updateFinances({ ...finances, expenses: [] }), 0);
     }
   }, []);
+
+  // ── Recurring Expenses Calculations & CRUD ────────────────────────────
+  const saveExpense = (exp) => {
+    const exists = recurringExpenses.find(e => e.id === exp.id);
+    const updated = exists
+      ? recurringExpenses.map(e => e.id === exp.id ? exp : e)
+      : [exp, ...recurringExpenses];
+    updateFinances({ ...finances, recurringExpenses: updated });
+    setModal(null);
+  };
+
+  const deleteExpense = (id) => {
+    if (!confirm('Delete this recurring expense?')) return;
+    updateFinances({ ...finances, recurringExpenses: recurringExpenses.filter(e => e.id !== id) });
+  };
+
+  const toggleExpensePaid = (expenseId, month) => {
+    const exp = recurringExpenses.find(e => e.id === expenseId);
+    if (!exp) return;
+    const cur = exp.history?.[month]?.status;
+    const nextStatus = cur === 'Paid' ? 'Pending' : cur === 'Pending' ? null : 'Paid';
+    const nextHistory = { ...(exp.history || {}) };
+    if (nextStatus === null) {
+      delete nextHistory[month];
+    } else {
+      nextHistory[month] = {
+        status: nextStatus,
+        amount: Number(exp.amount || 0),
+        date: new Date().toISOString().split('T')[0]
+      };
+    }
+    const updated = recurringExpenses.map(e => e.id === expenseId ? { ...e, history: nextHistory } : e);
+    updateFinances({ ...finances, recurringExpenses: updated });
+  };
+
+  const activeRecurring = recurringExpenses.filter(e => e.status !== 'Paused');
+  const totalMonthlyRecurring = activeRecurring.reduce((s, e) => s + Number(e.amount || 0), 0);
+  const curMonthPaidCount = activeRecurring.filter(e => e.history?.[thisMonth]?.status === 'Paid').length;
+  const curMonthPaidAmount = activeRecurring
+    .filter(e => e.history?.[thisMonth]?.status === 'Paid')
+    .reduce((s, e) => s + Number(e.history?.[thisMonth]?.amount || e.amount || 0), 0);
+  const largestExpense = activeRecurring.length > 0
+    ? [...activeRecurring].sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))[0]
+    : null;
+
+  const filteredExpenses = recurringExpenses.filter(e => {
+    const q = expenseSearch.toLowerCase();
+    const matchSearch = !q
+      || e.title?.toLowerCase().includes(q)
+      || e.payee?.toLowerCase().includes(q)
+      || e.notes?.toLowerCase().includes(q)
+      || e.category?.toLowerCase().includes(q);
+    const matchCat = !expenseCategoryFilter || e.category === expenseCategoryFilter;
+    return matchSearch && matchCat;
+  });
 
   // ── Credit Cards Calculations ─────────────────────────────────────────
   const totalLimit = creditCards.reduce((s, c) => s + Number(c.totalLimit || 0), 0);
@@ -419,7 +843,18 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         }
       });
 
-      const totalOutflow = vehicleEmiTotal + policyPremiumsTotal + sipsTotal + ccObligations;
+      // 5. Monthly Recurring Expenses (Rent, Maintenance, Maid, Electricity, etc.)
+      let recurringExpensesTotal = 0;
+      const recurringDueThisMonth = [];
+      recurringExpenses.forEach(e => {
+        if (e.status !== 'Paused') {
+          const amt = Number(e.amount || 0);
+          recurringExpensesTotal += amt;
+          recurringDueThisMonth.push({ title: e.title, amount: amt, dueDay: e.dueDay, category: e.category });
+        }
+      });
+
+      const totalOutflow = vehicleEmiTotal + policyPremiumsTotal + sipsTotal + ccObligations + recurringExpensesTotal;
       const net = expectedInflow - totalOutflow;
       const hasHeavyPolicy = policyPremiumsTotal > 15000;
 
@@ -434,6 +869,8 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         ccBills,
         ccEmiTotal,
         activeCardEmis,
+        recurringExpensesTotal,
+        recurringDueThisMonth,
         isCurrentMonth,
         totalOutflow,
         expectedInflow,
@@ -441,7 +878,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         hasHeavyPolicy
       };
     });
-  }, [futureMonths, vehicles, investments, salary, creditCards, totalMonthlyBills]);
+  }, [futureMonths, vehicles, investments, salary, creditCards, totalMonthlyBills, recurringExpenses]);
 
   return (
     <div className="animate-in">
@@ -453,6 +890,13 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         >
           <Calendar size={14} style={{ display: 'inline', marginRight: 6 }} />
           Upcoming Expenses (Next 6m)
+        </button>
+        <button
+          className={`tab ${tab === 'recurring' ? 'active' : ''}`}
+          onClick={() => setTab('recurring')}
+        >
+          <Home size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Rent &amp; Recurring Expenses ({recurringExpenses.length})
         </button>
         <button
           className={`tab ${tab === 'cards' ? 'active' : ''}`}
@@ -553,6 +997,13 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                       </div>
                     </div>
                     <div>
+                      <div className="text-sm text-muted">🏠 Rent &amp; Fixed Bills</div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{formatCurrency(p.recurringExpensesTotal)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {p.recurringDueThisMonth.length > 0 ? `${p.recurringDueThisMonth.length} recurring item${p.recurringDueThisMonth.length !== 1 ? 's' : ''}` : 'No active expenses'}
+                      </div>
+                    </div>
+                    <div>
                       <div className="text-sm text-muted">📈 Recurring SIPs</div>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{formatCurrency(p.sipsTotal)}</div>
                     </div>
@@ -592,7 +1043,100 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         </div>
       )}
 
-      {/* ── TAB 2: CREDIT CARDS & EMIS ───────────────────────────────── */}
+      {/* ── TAB 2: RENT & RECURRING EXPENSES ───────────────────────────── */}
+      {tab === 'recurring' && (
+        <div>
+          {/* Summary Stat Cards */}
+          <div className="grid-cols-3 mb-20">
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.15)' }}>
+                <Home size={20} color="var(--accent-indigo)" />
+              </div>
+              <div className="stat-label">Total Monthly Fixed Bills</div>
+              <div className="stat-value" style={{ color: 'var(--accent-red)' }}>{formatCurrency(totalMonthlyRecurring)}</div>
+              <div className="stat-sub">{activeRecurring.length} active recurring expense{activeRecurring.length !== 1 ? 's' : ''}</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.15)' }}>
+                <Check size={20} color="var(--accent-green)" />
+              </div>
+              <div className="stat-label">{monthLabel(thisMonth).split(' ')[0]} Payment Status</div>
+              <div className="stat-value" style={{ color: curMonthPaidCount === activeRecurring.length && activeRecurring.length > 0 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
+                {curMonthPaidCount} of {activeRecurring.length} Paid
+              </div>
+              <div className="stat-sub">{formatCurrency(curMonthPaidAmount)} paid this month</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(6,182,212,0.15)' }}>
+                <Receipt size={20} color="var(--accent-cyan)" />
+              </div>
+              <div className="stat-label">Largest Monthly Outflow</div>
+              <div className="stat-value" style={{ fontSize: 18 }}>
+                {largestExpense ? largestExpense.title : '—'}
+              </div>
+              <div className="stat-sub">
+                {largestExpense ? `${formatCurrency(largestExpense.amount)} / month` : 'Add an expense'}
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Actions */}
+          <div className="flex gap-10 mb-16 flex-wrap items-center">
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                className="form-input"
+                value={expenseSearch}
+                onChange={e => setExpenseSearch(e.target.value)}
+                placeholder="Search flat rent, maintenance, electricity, maid..."
+                style={{ paddingLeft: 36 }}
+              />
+            </div>
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 140 }}
+              value={expenseCategoryFilter}
+              onChange={e => setExpenseCategoryFilter(e.target.value)}
+            >
+              <option value="">All Categories</option>
+              {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button className="btn btn-primary" onClick={() => setModal({ type: 'expense' })}>
+              <Plus size={15} /> Add Recurring Expense
+            </button>
+          </div>
+
+          {filteredExpenses.length === 0 && (
+            <div className="empty-state">
+              <Home size={48} />
+              <div className="empty-state-title">
+                {recurringExpenses.length === 0 ? 'No recurring expenses added yet' : 'No expenses match your search'}
+              </div>
+              <div className="empty-state-desc">
+                {recurringExpenses.length === 0
+                  ? 'Track flat rent, society maintenance, maid/cook salaries, electricity, and utilities with monthly payment history.'
+                  : 'Try clearing your search query or category filter.'}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {filteredExpenses.map(exp => (
+              <ExpenseCard
+                key={exp.id}
+                expense={exp}
+                onEdit={(e) => setModal({ type: 'expense', expense: e })}
+                onDelete={deleteExpense}
+                onTogglePaid={toggleExpensePaid}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 3: CREDIT CARDS & EMIS ───────────────────────────────── */}
       {tab === 'cards' && (
         <div>
           {/* Summary Stat Cards */}
@@ -842,6 +1386,13 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
       )}
       {modal?.type === 'emi' && (
         <CardEmiModal onSave={emiData => addEmiToCard(modal.cardId, emiData)} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === 'expense' && (
+        <ExpenseModal
+          expense={modal.expense}
+          onSave={saveExpense}
+          onClose={() => setModal(null)}
+        />
       )}
     </div>
   );
