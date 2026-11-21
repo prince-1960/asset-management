@@ -606,7 +606,10 @@ function PortfolioModal({ initial, onSave, onClose }) {
             <div className="form-group">
               <label className="form-label">Status</label>
               <select className="form-input" value={form.status} onChange={e => set('status', e.target.value)}>
-                <option>Active</option><option>Matured</option><option>Withdrawn</option><option>Paused</option>
+                <option value="Active">Active</option>
+                <option value="Matured">Matured</option>
+                <option value="Withdrawn">Withdrawn</option>
+                <option value="Paused">Paused</option>
               </select>
             </div>
           </div>
@@ -648,7 +651,7 @@ function PortfolioModal({ initial, onSave, onClose }) {
 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={!form.name?.trim() && !form.type}>
+          <button className="btn btn-primary" onClick={handleSave} disabled={!form.name?.trim()}>
             <Check size={14} /> Save Investment
           </button>
         </div>
@@ -1449,9 +1452,9 @@ function PaymentCalendar({ investments }) {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {events.map((ev, i) => (
+          {events.map((ev) => (
             <div
-              key={i}
+              key={`${ev.type}-${ev.dueDate}-${ev.label}`}
               className="card"
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1494,7 +1497,8 @@ export default function Investments({ investments, updateInvestments }) {
   const [editingLoan, setEditingLoan] = useState(null);
   const [search, setSearch] = useState('');
   const [filterInsurer, setFilterInsurer] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterPolicyStatus, setFilterPolicyStatus] = useState('');
+  const [filterLoanStatus, setFilterLoanStatus] = useState('');
 
   const policies = investments?.policies || [];
   const portfolio = investments?.portfolio || [];
@@ -1588,7 +1592,7 @@ export default function Investments({ investments, updateInvestments }) {
       || p.holderName?.toLowerCase().includes(q)
       || p.insurer?.toLowerCase().includes(q);
     const matchInsurer = !filterInsurer || p.insurer === filterInsurer;
-    const matchStatus = !filterStatus || p.status === filterStatus;
+    const matchStatus = !filterPolicyStatus || p.status === filterPolicyStatus;
     return matchSearch && matchInsurer && matchStatus;
   });
 
@@ -1607,7 +1611,7 @@ export default function Investments({ investments, updateInvestments }) {
       || l.contactPerson?.toLowerCase().includes(q)
       || l.notes?.toLowerCase().includes(q)
       || l.interestRateText?.toLowerCase().includes(q);
-    const matchStatus = !filterStatus || l.status === filterStatus;
+    const matchStatus = !filterLoanStatus || l.status === filterLoanStatus;
     return matchSearch && matchStatus;
   });
 
@@ -1740,8 +1744,8 @@ export default function Investments({ investments, updateInvestments }) {
             <select
               className="form-input"
               style={{ width: 'auto', minWidth: 120 }}
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
+              value={filterPolicyStatus}
+              onChange={e => setFilterPolicyStatus(e.target.value)}
             >
               <option value="">All Status</option>
               {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1897,8 +1901,8 @@ export default function Investments({ investments, updateInvestments }) {
             <select
               className="form-input"
               style={{ width: 'auto', minWidth: 130 }}
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
+              value={filterLoanStatus}
+              onChange={e => setFilterLoanStatus(e.target.value)}
             >
               <option value="">All Status</option>
               <option value="Active">Active</option>

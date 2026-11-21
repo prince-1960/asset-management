@@ -192,7 +192,7 @@ export default function App() {
           const due = new Date(p.nextDueDate);
           const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
           if (diffDays >= 0 && diffDays <= 3) {
-            alerts.push(`Policy "${p.name || 'Policy'}" premium due in ${diffDays} day(s) (${p.nextDueDate})`);
+            alerts.push(`Policy "${p.policyName || p.name || 'Policy'}" premium due in ${diffDays} day(s) (${p.nextDueDate})`);
           }
         }
       });
@@ -313,7 +313,7 @@ export default function App() {
   const effectivePage = isFleetOnly ? 'fleet' : page;
   const filteredNav = isFleetOnly ? NAV.filter(n => n.id === 'fleet') : NAV;
   const sections = [...new Set(filteredNav.map(n => n.section))];
-  const handleExport = () => isFleetOnly ? exportFleetToExcel(vehicles) : exportToExcel(vehicles, rooms, investments);
+  const handleExport = () => isFleetOnly ? exportFleetToExcel(vehicles) : exportToExcel(vehicles, rooms, investments, finances);
   const pageProps = {
     vehicles,
     rooms,

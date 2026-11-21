@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { formatDate, formatCurrency, monthLabel, calculatePendingLoan, getRemainingMonthsCount } from './storage';
 
-export const exportToExcel = (vehicles, rooms, investments) => {
+export const exportToExcel = (vehicles, rooms, investments, finances) => {
   const wb = XLSX.utils.book_new();
 
   // ── Sheet 1: Fleet Income ──────────────────────────────────────────────
@@ -235,6 +235,67 @@ export const exportToExcel = (vehicles, rooms, investments) => {
   if (addInvRows.length) {
     const ws9 = XLSX.utils.json_to_sheet(addInvRows);
     XLSX.utils.book_append_sheet(wb, ws9, 'Investments (Legacy)');
+  }
+
+  // ── Sheet 10: Loans Given (Lending) ──────────────────────────────────
+  const loanRows = (investments?.loansGiven || []).map(l => ({
+    'Borrower / Org': l.borrowerName || '',
+    'Principal Lent (₹)': l.principalAmount || '',
+    'Monthly Return (₹)': l.monthlyPayout || '',
+    'Payout Day': l.payoutDay || 15,
+    Terms: l.interestRateText || '',
+    'Start Date': formatDate(l.startDate),
+    'Repayment Date': formatDate(l.endDate),
+    Status: l.status || 'Active',
+    'Contact Person': l.contactPerson || '',
+    Phone: l.phone || '',
+    Notes: l.notes || '',
+  }));
+  if (loanRows.length) {
+    const ws10 = XLSX.utils.json_to_sheet(loanRows);
+    XLSX.utils.book_append_sheet(wb, ws10, 'Loans Given (Lending)');
+  }
+
+  // ── Sheet 11: Rent & Recurring Expenses ───────────────────────────────
+  const recurringRows = (finances?.recurringExpenses || []).map(e => ({
+    Expense: e.title || '',
+    Category: e.category || '',
+    'Monthly Amount (₹)': e.amount || '',
+    'Due Day': e.dueDay || '',
+    Payee: e.payee || '',
+    Status: e.status || 'Active',
+    Notes: e.notes || '',
+  }));
+  if (recurringRows.length) {
+    const ws11 = XLSX.utils.json_to_sheet(recurringRows);
+    XLSX.utils.book_append_sheet(wb, ws11, 'Rent & Recurring Expenses');
+  }
+
+  // ── Sheet 12: Credit Cards & EMIs ─────────────────────────────────────
+  const cardRows = (finances?.creditCards || []).map(c => ({
+    Bank: c.bank || '',
+    'Card Variant': c.name || '',
+    'Last 4': c.last4 || '',
+    'Credit Limit (₹)': c.totalLimit || '',
+    'Total Outstanding (₹)': c.totalOutstanding || '',
+    'Monthly Bill (₹)': c.monthlyBill || '',
+    'Due Day': c.dueDay || '',
+    'Active EMIs': (c.emis || []).map(e => `${e.name}: ₹${e.emiAmount} (${e.remainingMonths}m left)`).join('; ') || 'None',
+  }));
+  if (cardRows.length) {
+    const ws12 = XLSX.utils.json_to_sheet(cardRows);
+    XLSX.utils.book_append_sheet(wb, ws12, 'Credit Cards & EMIs');
+  }
+
+  // ── Sheet 13: Salary & Income ─────────────────────────────────────────
+  if (finances?.salary?.amount) {
+    const salaryRows = [{
+      Employer: finances.salary.company || '',
+      'Monthly Salary (₹)': finances.salary.amount,
+      'Pay Day': finances.salary.payDay || 1,
+    }];
+    const ws13 = XLSX.utils.json_to_sheet(salaryRows);
+    XLSX.utils.book_append_sheet(wb, ws13, 'Salary Setup');
   }
 
   // Save file

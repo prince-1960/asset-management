@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AlertTriangle, TrendingUp, Home, Truck, Zap, IndianRupee,
   Landmark, Calendar, Check, ChevronRight, MessageCircle,
-  Shield, ArrowUpRight, ArrowDownRight, PieChart, Activity, Sparkles, Clock, Briefcase
+  Shield, ArrowUpRight, ArrowDownLeft, PieChart, Activity, Sparkles, Clock, Briefcase
 } from 'lucide-react';
 import {
   daysUntil, formatDate, formatCurrency, currentMonthKey, monthLabel,
@@ -142,7 +142,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
   // ── Salary Inflow (Realized this month) ────────────────────────────────
   const salaryRecord = finances?.salary?.history?.[thisMonth] || finances?.salary?.receipts?.[thisMonth];
   const salaryAmount = Number(finances?.salary?.amount || 0);
-  const isSalaryReceived = salaryRecord ? salaryRecord.status === 'Received' : salaryAmount > 0;
+  const isSalaryReceived = salaryRecord ? salaryRecord.status === 'Received' : false;
   const salaryInflow = isSalaryReceived ? (Number(salaryRecord?.amount) || salaryAmount) : 0;
 
   // ── Credit Card Monthly Dues & Total Debt ─────────────────────────────
@@ -169,8 +169,6 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       const monthlyAmt = Number(l.monthlyPayout || 0);
       if (payout?.status === 'Received') {
         total += Number(payout.amount || monthlyAmt);
-      } else if (!payout && monthlyAmt > 0) {
-        total += monthlyAmt;
       }
     });
     return total;
@@ -232,7 +230,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       totalOutflow: loanStats.totalMonthlyEmi + policyDueTotal + sipsDueTotal + ccObligations.totalDue + recurringDueTotal,
       duePolicies
     };
-  }, [loanStats.totalMonthlyEmi, investments, ccObligations.totalDue, finances?.recurringExpenses, thisMonth]);
+  }, [loanStats, investments, ccObligations.totalDue, finances?.recurringExpenses, thisMonth]);
 
   // ── Monthly P&L Summary ───────────────────────────────────────────────
   const monthlyPL = useMemo(() => {
@@ -272,7 +270,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       net,
       ccOutstanding: ccObligations.totalOutstanding
     };
-  }, [investments, policyMaturityAssets, totalPrincipalLent, loanStats.totalPending, ccObligations.totalOutstanding]);
+  }, [investments, policyMaturityAssets, totalPrincipalLent, loanStats, ccObligations.totalOutstanding]);
 
   // ── 6-Month Income Trend Data ─────────────────────────────────────────
   const trendData = useMemo(() => {
@@ -293,8 +291,6 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       const salRecord = finances?.salary?.history?.[monthKey] || finances?.salary?.receipts?.[monthKey];
       if (salRecord?.status === 'Received') {
         sal = Number(salRecord.amount || salaryAmount);
-      } else if (!salRecord && salaryAmount > 0 && monthKey === thisMonth) {
-        sal = salaryAmount;
       }
       let lending = 0;
       (investments?.loansGiven || []).forEach(l => {
@@ -303,8 +299,6 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
         const monthlyAmt = Number(l.monthlyPayout || 0);
         if (payout?.status === 'Received') {
           lending += Number(payout.amount || monthlyAmt);
-        } else if (!payout && monthlyAmt > 0 && monthKey === thisMonth) {
-          lending += monthlyAmt;
         }
       });
       return {
@@ -333,8 +327,8 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {expiryAlerts.map((a, i) => (
-              <div key={i} className={`alert ${a.days <= 0 ? 'alert-danger' : a.days <= 30 ? 'alert-danger' : 'alert-warning'}`}>
+            {expiryAlerts.map(a => (
+              <div key={`${a.vehicle}-${a.doc}-${a.expiry}`} className={`alert ${a.days <= 0 ? 'alert-danger' : a.days <= 30 ? 'alert-danger' : 'alert-warning'}`}>
                 <AlertTriangle size={16} style={{ flexShrink: 0 }} />
                 <div>
                   <span className="font-bold">{a.vehicle}</span> — {a.doc}
@@ -388,7 +382,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, background: 'var(--bg-base)', padding: '12px 14px', borderRadius: 'var(--radius-md)' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-green)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>
-                <ArrowDownRight size={13} /> Total Inflow Received
+                <ArrowDownLeft size={13} /> Total Inflow Received
               </div>
               <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginTop: 2 }}>
                 {formatCurrency(monthlyPL.totalInflow)}
@@ -545,6 +539,8 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
           {trendData.map(d => {
             const fleetHeightPct = maxTrendTotal > 0 ? (d.fleet / maxTrendTotal) * 100 : 0;
             const rentHeightPct = maxTrendTotal > 0 ? (d.rent / maxTrendTotal) * 100 : 0;
+            const salaryHeightPct = maxTrendTotal > 0 ? (d.salary / maxTrendTotal) * 100 : 0;
+            const lendingHeightPct = maxTrendTotal > 0 ? (d.lending / maxTrendTotal) * 100 : 0;
             const isCurrent = d.key === thisMonth;
 
             return (
@@ -553,22 +549,46 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
                   {formatCurrency(d.total)}
                 </div>
                 <div style={{ width: '100%', maxWidth: 44, display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'flex-end', borderRadius: '6px 6px 0 0', overflow: 'hidden', background: 'rgba(255,255,255,0.03)' }}>
-                  <div
-                    style={{
-                      height: `${fleetHeightPct}%`,
-                      background: isCurrent ? 'var(--accent-blue)' : 'rgba(59,130,246,0.6)',
-                      transition: 'height 0.3s'
-                    }}
-                    title={`Fleet: ${formatCurrency(d.fleet)}`}
-                  />
-                  <div
-                    style={{
-                      height: `${rentHeightPct}%`,
-                      background: isCurrent ? 'var(--accent-green)' : 'rgba(16,185,129,0.6)',
-                      transition: 'height 0.3s'
-                    }}
-                    title={`Rent: ${formatCurrency(d.rent)}`}
-                  />
+                  {d.lending > 0 && (
+                    <div
+                      style={{
+                        height: `${lendingHeightPct}%`,
+                        background: isCurrent ? 'var(--accent-cyan)' : 'rgba(6,182,212,0.6)',
+                        transition: 'height 0.3s'
+                      }}
+                      title={`Lending: ${formatCurrency(d.lending)}`}
+                    />
+                  )}
+                  {d.salary > 0 && (
+                    <div
+                      style={{
+                        height: `${salaryHeightPct}%`,
+                        background: isCurrent ? 'var(--accent-purple)' : 'rgba(168,85,247,0.6)',
+                        transition: 'height 0.3s'
+                      }}
+                      title={`Salary: ${formatCurrency(d.salary)}`}
+                    />
+                  )}
+                  {d.rent > 0 && (
+                    <div
+                      style={{
+                        height: `${rentHeightPct}%`,
+                        background: isCurrent ? 'var(--accent-green)' : 'rgba(16,185,129,0.6)',
+                        transition: 'height 0.3s'
+                      }}
+                      title={`Rent: ${formatCurrency(d.rent)}`}
+                    />
+                  )}
+                  {d.fleet > 0 && (
+                    <div
+                      style={{
+                        height: `${fleetHeightPct}%`,
+                        background: isCurrent ? 'var(--accent-blue)' : 'rgba(59,130,246,0.6)',
+                        transition: 'height 0.3s'
+                      }}
+                      title={`Fleet: ${formatCurrency(d.fleet)}`}
+                    />
+                  )}
                 </div>
                 <div style={{ marginTop: 8, fontSize: 12, fontWeight: isCurrent ? 700 : 500, color: isCurrent ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {d.label} {isCurrent && '●'}
@@ -577,12 +597,18 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
             );
           })}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: 12, fontSize: 12 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-blue)', display: 'inline-block' }} /> Fleet Income
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 12, fontSize: 11, flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-blue)', display: 'inline-block' }} /> Fleet
           </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-green)', display: 'inline-block' }} /> Rent Collection
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-green)', display: 'inline-block' }} /> Property Rent
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-purple)', display: 'inline-block' }} /> Salary
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--text-secondary)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-cyan)', display: 'inline-block' }} /> Lending
           </span>
         </div>
       </div>
@@ -781,7 +807,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
                 {rentStats.unpaidRooms.map(r => {
                   const phone = r.tenantPhone ? r.tenantPhone.replace(/\D/g, '') : '';
                   const msg = encodeURIComponent(`Hi ${r.tenant || 'there'}, friendly reminder that your rent of ₹${r.pendingAmount || r.currentRent} for ${monthLabel(thisMonth)} is pending. Kindly pay at the earliest. - AssetFlow`);
-                  const waUrl = phone ? `https://wa.me/91${phone.length === 10 ? phone : phone}?text=${msg}` : null;
+                  const cleanPhone = phone.length === 12 ? phone :
+                    phone.length === 11 && phone.startsWith('0') ? '91' + phone.slice(1) :
+                    phone.length === 10 ? '91' + phone : phone;
+                  const waUrl = cleanPhone ? `https://wa.me/${cleanPhone}?text=${msg}` : null;
 
                   return (
                     <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13 }}>

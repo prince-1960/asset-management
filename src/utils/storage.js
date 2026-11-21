@@ -187,7 +187,7 @@ export const mergeFinances = (loaded) => {
 };
 
 // ID generator
-export const genId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+export const genId = () => `id_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
 // Date helpers
 export const formatDate = (dateStr) => {
@@ -275,6 +275,7 @@ export const calculatePendingLoan = (emi) => {
 };
 
 export const formatCurrency = (amount) => {
-  if (!amount && amount !== 0) return '—';
-  return `₹${Number(amount).toLocaleString('en-IN')}`;
+  const n = Number(amount);
+  if (amount === null || amount === undefined || amount === '' || isNaN(n)) return '—';
+  return `₹${n.toLocaleString('en-IN')}`;
 };

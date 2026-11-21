@@ -303,7 +303,8 @@ function DocModal({ vehicle, onSave, onClose }) {
       return;
     }
     const cleanReg = vehicle.regNumber.toUpperCase().replace(/\s/g, '');
-    window.open(`https://parivahan.gov.in/rcdlstatus/`, '_blank');
+    navigator.clipboard?.writeText?.(cleanReg);
+    window.open('https://parivahan.gov.in/rcdlstatus/', '_blank');
   };
 
   return (
@@ -405,7 +406,7 @@ function DocModal({ vehicle, onSave, onClose }) {
 }
 
 // ── Main Fleet Component ──────────────────────────────────────────────────
-export default function Fleet({ vehicles, updateVehicles }) {
+export default function Fleet({ vehicles, updateVehicles, isFleetOnly }) {
   const [expanded, setExpanded] = useState({});
   const [modal, setModal] = useState(null); // null | {type, vehicle?}
   const [activeTab, setActiveTab] = useState({}); // per vehicle: 'income'|'emi'|'docs'
@@ -507,7 +508,7 @@ export default function Fleet({ vehicles, updateVehicles }) {
                   {expiringDocs.length > 0 && (
                     <span className="badge badge-red">⚠️ {expiringDocs.length} expiring</span>
                   )}
-                  {v.emi?.amount > 0 && (
+                  {Number(v.emi?.amount) > 0 && (
                     <span className={`badge ${v.emi.paid?.[thisMonth] === 'Paid' ? 'badge-green' : 'badge-amber'}`}>
                       EMI {v.emi.paid?.[thisMonth] === 'Paid' ? '✓' : 'due'}
                     </span>
@@ -643,7 +644,7 @@ export default function Fleet({ vehicles, updateVehicles }) {
                             <div>
                               <div className="text-sm text-muted">Estimated Loan Left</div>
                               <div style={{ fontWeight: 700, fontSize: 18, color: 'var(--accent-red)' }}>
-                                {v.emi.endDate ? formatCurrency(calculatePendingLoan(v.emi)) : (v.emi.totalLoan ? formatCurrency(calculatePendingLoan(v.emi)) : '—')}
+                                {(v.emi.endDate || v.emi.totalLoan) ? formatCurrency(calculatePendingLoan(v.emi)) : '—'}
                               </div>
                               <div className="text-sm text-secondary">
                                 {v.emi.endDate ? `${getRemainingMonthsCount(v.emi.endDate)} EMIs remaining` : 'Set end date in Edit Vehicle'}

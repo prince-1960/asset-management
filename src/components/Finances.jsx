@@ -1,15 +1,22 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   CreditCard, IndianRupee, TrendingUp, Calendar, AlertTriangle,
   Plus, Edit2, Trash2, Check, X,
-  PieChart, ArrowUpRight, ArrowDownRight, Sparkles, Shield,
-  Clock, DollarSign, Wallet, Home, Receipt, Search,
-  ChevronDown, ChevronUp, Tag
+  Clock, Wallet, Home, Receipt, Search,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import {
   genId, formatDate, formatCurrency, currentMonthKey, monthLabel,
   getLast12Months, daysUntil
 } from '../utils/storage';
+
+const getOrdinal = (n) => {
+  if (!n) return '';
+  const num = Number(n);
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = num % 100;
+  return num + (s[(v - 20) % 10] || s[v] || s[0]);
+};
 
 // ─── Default Credit Card ──────────────────────────────────────────────────────
 const blankCard = () => ({
@@ -467,7 +474,7 @@ function ExpenseCard({ expense, onEdit, onDelete, onTogglePaid }) {
             <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
               {formatCurrency(expense.amount)} / month
             </span>
-            {expense.dueDay && <span>📅 Due on {expense.dueDay}th</span>}
+            {expense.dueDay && <span>📅 Due on {getOrdinal(expense.dueDay)}</span>}
             {expense.payee && <span>👤 Payee: <strong>{expense.payee}</strong></span>}
           </div>
         </div>
@@ -540,7 +547,7 @@ function ExpenseCard({ expense, onEdit, onDelete, onTogglePaid }) {
               <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
                 {expense.payee || '—'}
               </div>
-              <div className="text-sm text-secondary">Due {expense.dueDay}th of every month</div>
+              <div className="text-sm text-secondary">Due {getOrdinal(expense.dueDay)} of every month</div>
             </div>
             <div>
               <div className="text-sm text-muted">Expense Category</div>
@@ -610,11 +617,11 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
   const [expenseCategoryFilter, setExpenseCategoryFilter] = useState('');
 
   // Purge any corrupted/legacy parsed expenses so strange numbers are cleared
-  useMemo(() => {
+  useEffect(() => {
     if (finances.expenses && finances.expenses.length > 0) {
-      setTimeout(() => updateFinances({ ...finances, expenses: [] }), 0);
+      updateFinances({ ...finances, expenses: [] });
     }
-  }, []);
+  }, [finances.expenses]);
 
   // ── Recurring Expenses Calculations & CRUD ────────────────────────────
   const saveExpense = (exp) => {
@@ -725,9 +732,9 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
       ...finances,
       salary: {
         ...salary,
-        amount: Number(salaryForm.amount),
-        company: salaryForm.company,
-        payDay: Number(salaryForm.payDay)
+        amount: Number(salaryForm.amount) || 0,
+        company: salaryForm.company?.trim() || '',
+        payDay: Number(salaryForm.payDay) || 1
       }
     });
     alert('Salary settings updated!');
@@ -1029,7 +1036,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                       </div>
                       <div className="flex gap-12 flex-wrap">
                         {p.policiesDueThisMonth.map((pol, pi) => (
-                          <span key={pi} className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                          <span key={`${pol.name}-${pi}`} className="text-sm" style={{ color: 'var(--text-primary)' }}>
                             • <strong>{pol.name}</strong> ({pol.holder || 'Self'}): <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>{formatCurrency(pol.amount)}</span>
                           </span>
                         ))}
@@ -1223,7 +1230,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                         <span>Limit: <strong>{formatCurrency(c.totalLimit)}</strong></span>
                         <span>Outstanding: <strong style={{ color: 'var(--accent-red)' }}>{formatCurrency(c.totalOutstanding)}</strong></span>
                         <span>Available: <strong style={{ color: 'var(--accent-green)' }}>{formatCurrency(Math.max(0, limit - out))}</strong></span>
-                        {c.dueDay && <span>📅 Due on {c.dueDay}th of month</span>}
+                        {c.dueDay && <span>📅 Due on {getOrdinal(c.dueDay)} of month</span>}
                       </div>
                     </div>
 
@@ -1294,7 +1301,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         </div>
       )}
 
-      {/* ── TAB 3: SALARY & INCOME TRACKER ──────────────────────────── */}
+      {/* ── TAB 4: SALARY & INCOME TRACKER ──────────────────────────── */}
       {tab === 'salary' && (
         <div>
           <div className="card mb-20">
