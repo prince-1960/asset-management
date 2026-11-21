@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   AlertTriangle, TrendingUp, Home, Truck, Zap, IndianRupee,
   Landmark, Calendar, Check, ChevronRight, MessageCircle,
-  Shield, ArrowUpRight, ArrowDownRight, PieChart, Activity, Sparkles, Clock
+  Shield, ArrowUpRight, ArrowDownRight, PieChart, Activity, Sparkles, Clock, Briefcase
 } from 'lucide-react';
 import {
   daysUntil, formatDate, formatCurrency, currentMonthKey, monthLabel,
@@ -140,12 +140,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
   const swpReceivedAmount = swpThisMonth?.status === 'Received' ? Number(swpThisMonth.amount || swp.monthlyWithdrawal || 0) : 0;
 
   // ── Salary Inflow (Realized this month) ────────────────────────────────
-  const salaryInflow = useMemo(() => {
-    const salary = finances?.salary;
-    if (!salary?.amount) return 0;
-    const r = salary.receipts?.[thisMonth];
-    return r?.status === 'Received' ? Number(r.amount || salary.amount) : 0;
-  }, [finances?.salary, thisMonth]);
+  const salaryRecord = finances?.salary?.history?.[thisMonth] || finances?.salary?.receipts?.[thisMonth];
+  const salaryAmount = Number(finances?.salary?.amount || 0);
+  const isSalaryReceived = salaryRecord ? salaryRecord.status === 'Received' : salaryAmount > 0;
+  const salaryInflow = isSalaryReceived ? (Number(salaryRecord?.amount) || salaryAmount) : 0;
 
   // ── Credit Card Monthly Dues & Total Debt ─────────────────────────────
   const ccObligations = useMemo(() => {
@@ -238,15 +236,23 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
         if (p?.status === 'Paid') rent += Number(r.currentRent || 0);
         else if (p?.status === 'Partial') rent += Number(p.amount || 0);
       });
+      let sal = 0;
+      const salRecord = finances?.salary?.history?.[monthKey] || finances?.salary?.receipts?.[monthKey];
+      if (salRecord?.status === 'Received') {
+        sal = Number(salRecord.amount || salaryAmount);
+      } else if (!salRecord && salaryAmount > 0 && monthKey === thisMonth) {
+        sal = salaryAmount;
+      }
       return {
         key: monthKey,
         label: monthLabel(monthKey).split(' ')[0].slice(0, 3),
         fleet,
         rent,
-        total: fleet + rent
+        salary: sal,
+        total: fleet + rent + sal
       };
     });
-  }, [last6Months, vehicles, rooms]);
+  }, [last6Months, vehicles, rooms, finances?.salary, salaryAmount, thisMonth]);
 
   const maxTrendTotal = Math.max(...trendData.map(d => d.total), 1);
 
@@ -396,7 +402,23 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       </div>
 
       {/* Top Stat Cards */}
-      <div className="grid-cols-4 mb-20">
+      <div className={salaryAmount > 0 ? "grid-cols-5 mb-20" : "grid-cols-4 mb-20"}>
+        {salaryAmount > 0 && (
+          <div className="stat-card">
+            <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.15)' }}>
+              <Briefcase size={20} style={{ color: 'var(--accent-indigo)' }} />
+            </div>
+            <div className="stat-label">Salary Income ({monthLabel(thisMonth).split(' ')[0]})</div>
+            <div className="stat-value" style={{ color: 'var(--accent-indigo)' }}>
+              {formatCurrency(salaryInflow)}
+            </div>
+            <div className="stat-sub">
+              {finances?.salary?.company ? `${finances.salary.company} · ` : ''}
+              {isSalaryReceived ? '✓ Realized' : '⏳ Expected'}
+            </div>
+          </div>
+        )}
+
         <div className="stat-card">
           <div className="stat-icon" style={{ background: 'rgba(59,130,246,0.15)' }}>
             <Truck size={20} style={{ color: 'var(--accent-blue)' }} />

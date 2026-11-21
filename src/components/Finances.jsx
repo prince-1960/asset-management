@@ -6,6 +6,7 @@ import {
   Clock, DollarSign, Wallet, ShoppingBag, Utensils, Film, Car, Zap, HeartPulse
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { extractTextFromPdf } from '../utils/pdfParser';
 import {
   genId, formatDate, formatCurrency, currentMonthKey, monthLabel,
   getLast12Months, daysUntil
@@ -369,7 +370,63 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
     });
   };
 
-  // ── Statement Parser Engine (CSV, Excel, Text) ─────────────────────────
+  // ── Statement Parser Engine (PDF, CSV, Excel, Text) ───────────────────
+  const parseStatementRawLines = (text) => {
+    if (!text) return [];
+    const lines = text.split('\n');
+    const parsed = [];
+
+    lines.forEach(line => {
+      line = line.trim();
+      if (!line || line.length < 5) return;
+      if (/^(date|transaction|sl\.? no|details|narration|description|reference|chq|ref|balance|opening|closing)\b/i.test(line)) return;
+
+      // 1. Extract Date
+      let date = '';
+      const dateMatch = line.match(/\b(?:\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}|\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}|\d{1,2}[\/\-\.\s]+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[\/\-\.\s]+\d{2,4})\b/i);
+      if (dateMatch) {
+        date = dateMatch[0];
+        line = line.replace(dateMatch[0], ' ').trim();
+      }
+
+      // 2. Extract Amount (look for amounts like 1,250.00 or 450)
+      const amounts = [];
+      const numRegex = /(?:(?:₹|rs\.?|inr)\s*)?([\d,]+\.\d{2}|[\d,]+(?:\.\d+)?)/gi;
+      let nm;
+      while ((nm = numRegex.exec(line)) !== null) {
+        const rawVal = nm[1].replace(/,/g, '');
+        const val = parseFloat(rawVal);
+        if (!isNaN(val) && val > 0 && (nm[1].includes('.') || val >= 10)) {
+          amounts.push({ match: nm[0], val });
+        }
+      }
+
+      if (amounts.length === 0) return;
+
+      const targetAmount = amounts[amounts.length - 1];
+      let cleanDesc = line
+        .replace(targetAmount.match, ' ')
+        .replace(/\s+(dr|cr|debit|credit)\b/gi, '')
+        .replace(/[\s\t]+/g, ' ')
+        .trim();
+
+      cleanDesc = cleanDesc.replace(/^\d+\s+/, '').replace(/\s+[A-Z0-9]{12,}$/, '').trim();
+      if (!cleanDesc || cleanDesc.length < 2) cleanDesc = 'Bank Transaction';
+
+      const { category, isWaste } = categorizeDescription(cleanDesc);
+      parsed.push({
+        id: genId(),
+        date: date || new Date().toISOString().split('T')[0],
+        description: cleanDesc,
+        amount: targetAmount.val,
+        category,
+        isWaste
+      });
+    });
+
+    return parsed;
+  };
+
   const processParsedTransactions = (items) => {
     if (!items.length) {
       alert('No valid debit transactions could be parsed from the file.');
@@ -380,9 +437,24 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
     alert(`Successfully parsed & categorized ${items.length} transactions!`);
   };
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+
+    if (isPdf) {
+      try {
+        const buffer = await file.arrayBuffer();
+        const text = await extractTextFromPdf(buffer);
+        const parsed = parseStatementRawLines(text);
+        processParsedTransactions(parsed);
+      } catch (err) {
+        alert(err.message || 'Could not parse PDF statement. Ensure it is not locked or paste transaction text below.');
+      }
+      e.target.value = '';
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -390,44 +462,11 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         const data = new Uint8Array(evt.target.result);
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-
-        const parsed = [];
-        json.forEach(row => {
-          if (!row || row.length < 2) return;
-          // Look for amount and description columns
-          let date = new Date().toISOString().split('T')[0];
-          let desc = '';
-          let amount = 0;
-
-          row.forEach(cell => {
-            if (typeof cell === 'string') {
-              if (/\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4}/.test(cell)) {
-                date = cell;
-              } else if (cell.length > 3 && isNaN(Number(cell))) {
-                desc = cell;
-              }
-            } else if (typeof cell === 'number' && cell > 0 && !amount) {
-              amount = cell;
-            }
-          });
-
-          if (desc && amount > 0) {
-            const { category, isWaste } = categorizeDescription(desc);
-            parsed.push({
-              id: genId(),
-              date,
-              description: desc,
-              amount,
-              category,
-              isWaste
-            });
-          }
-        });
-
+        const csv = XLSX.utils.sheet_to_csv(firstSheet);
+        const parsed = parseStatementRawLines(csv);
         processParsedTransactions(parsed);
       } catch (err) {
-        alert('Could not parse statement file. Try uploading standard CSV or paste text below.');
+        alert('Could not parse statement file. Try uploading standard CSV/XLSX or paste text below.');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -436,30 +475,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
 
   const handleParseRawText = () => {
     if (!rawText.trim()) return;
-    const lines = rawText.split('\n');
-    const parsed = [];
-
-    lines.forEach(line => {
-      if (!line.trim()) return;
-      // Search for currency/number like ₹500, Rs. 1200, 450.00
-      const amountMatch = line.match(/(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d+)?)/i);
-      if (amountMatch) {
-        const amt = parseFloat(amountMatch[1].replace(/,/g, ''));
-        if (amt > 0) {
-          const cleanDesc = line.replace(amountMatch[0], '').trim() || 'Parsed Transaction';
-          const { category, isWaste } = categorizeDescription(cleanDesc);
-          parsed.push({
-            id: genId(),
-            date: new Date().toISOString().split('T')[0],
-            description: cleanDesc,
-            amount: amt,
-            category,
-            isWaste
-          });
-        }
-      }
-    });
-
+    const parsed = parseStatementRawLines(rawText);
     if (parsed.length) {
       processParsedTransactions(parsed);
       setRawText('');
@@ -502,7 +518,7 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
   }, []);
 
   const forwardProjections = useMemo(() => {
-    return futureMonths.map(monthKey => {
+    return futureMonths.map((monthKey, monthIdx) => {
       // 1. Vehicle EMIs
       let vehicleEmiTotal = 0;
       vehicles.forEach(v => {
@@ -525,6 +541,11 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         let fallsDue = false;
         if (p.nextDueDate && p.nextDueDate.startsWith(monthKey)) {
           fallsDue = true;
+        } else if (p.nextDueDate) {
+          const [ndY, ndM] = p.nextDueDate.split('-').map(Number);
+          const diffMonths = (targetY - ndY) * 12 + (targetM - ndM);
+          const interval = { Monthly: 1, Quarterly: 3, 'Half-Yearly': 6, Yearly: 12 }[freq] || 12;
+          if (diffMonths >= 0 && diffMonths % interval === 0) fallsDue = true;
         } else if (start) {
           const diffMonths = (targetY - start.getFullYear()) * 12 + (targetM - (start.getMonth() + 1));
           if (diffMonths >= 0) {
@@ -548,8 +569,23 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         }
       });
 
-      // 4. CC EMIs & Estimated Bill
-      let ccObligations = totalCardEmis + (totalMonthlyBills > 0 ? totalMonthlyBills : 0);
+      // 4. CC Obligations
+      // Month 0 (Current Month): includes current statement bill + card EMIs.
+      // Month 1-5 (Upcoming Months): bills are variable, so do NOT repeat current statement bill!
+      // Only include active card EMIs whose remaining tenure covers this future month (remainingMonths > monthIdx).
+      let activeCardEmis = [];
+      creditCards.forEach(c => {
+        (c.emis || []).forEach(e => {
+          const rem = Number(e.remainingMonths || 0);
+          if (rem > monthIdx) {
+            activeCardEmis.push({ ...e, cardName: c.name || c.bank });
+          }
+        });
+      });
+      const ccEmiTotal = activeCardEmis.reduce((s, e) => s + Number(e.emiAmount || 0), 0);
+      const isCurrentMonth = monthIdx === 0;
+      const ccBills = isCurrentMonth ? totalMonthlyBills : 0;
+      const ccObligations = ccBills + ccEmiTotal;
 
       // Inflow (Salary + SWP)
       let expectedInflow = Number(salary.amount || 0);
@@ -569,13 +605,17 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
         policiesDueThisMonth,
         sipsTotal,
         ccObligations,
+        ccBills,
+        ccEmiTotal,
+        activeCardEmis,
+        isCurrentMonth,
         totalOutflow,
         expectedInflow,
         net,
         hasHeavyPolicy
       };
     });
-  }, [futureMonths, vehicles, investments, salary, totalCardEmis, totalMonthlyBills]);
+  }, [futureMonths, vehicles, investments, salary, creditCards, totalMonthlyBills]);
 
   return (
     <div className="animate-in">
@@ -698,8 +738,16 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{formatCurrency(p.sipsTotal)}</div>
                     </div>
                     <div>
-                      <div className="text-sm text-muted">💳 CC Bills &amp; EMIs</div>
+                      <div className="text-sm text-muted">💳 {p.isCurrentMonth ? 'CC Bill & EMIs' : 'Fixed CC EMIs'}</div>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{formatCurrency(p.ccObligations)}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {p.isCurrentMonth
+                          ? `Bill: ${formatCurrency(p.ccBills)} · EMIs: ${formatCurrency(p.ccEmiTotal)}`
+                          : p.activeCardEmis.length > 0
+                            ? `${p.activeCardEmis.length} active EMI${p.activeCardEmis.length > 1 ? 's' : ''}`
+                            : 'No ongoing card EMIs'
+                        }
+                      </div>
                     </div>
                   </div>
 
@@ -1016,8 +1064,8 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
               <label className="upload-area" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'pointer', borderRadius: 'var(--radius-md)' }}>
                 <UploadCloud size={32} color="var(--accent-indigo)" style={{ marginBottom: 8 }} />
                 <div style={{ fontWeight: 600 }}>Click to Upload Statement</div>
-                <div className="text-sm text-muted">Supports .CSV, .XLSX, or .XLS from any Indian bank</div>
-                <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} style={{ display: 'none' }} />
+                <div className="text-sm text-muted">Supports .PDF, .CSV, or .XLSX bank &amp; card statements</div>
+                <input type="file" accept=".pdf, .csv, .xlsx, .xls" onChange={handleFileUpload} style={{ display: 'none' }} />
               </label>
 
               {/* Raw Text Box */}
