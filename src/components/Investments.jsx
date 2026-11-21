@@ -3,7 +3,7 @@ import {
   Plus, X, Edit2, Trash2, ChevronDown, ChevronUp,
   Shield, Briefcase, Calendar, AlertTriangle, Check,
   Phone, User, FileText, IndianRupee, TrendingUp,
-  Clock, CheckCircle, XCircle, Search, Sparkles
+  Clock, CheckCircle, XCircle, Search, Sparkles, Landmark
 } from 'lucide-react';
 import {
   genId, formatDate, formatCurrency, daysUntil,
@@ -67,6 +67,22 @@ const blankPortfolio = () => ({
   startDate: '', maturityDate: '', expectedReturn: '',
   currentValue: '', status: 'Active',
   paymentHistory: {}, notes: '',
+});
+
+const blankLoanGiven = () => ({
+  id: genId(),
+  borrowerName: '',
+  contactPerson: '',
+  phone: '',
+  principalAmount: '',
+  monthlyPayout: '',
+  payoutDay: 15,
+  interestRateText: '',
+  startDate: '',
+  endDate: '',
+  status: 'Active',
+  notes: '',
+  payouts: {},
 });
 
 // ─── Policy Modal ─────────────────────────────────────────────────────────────
@@ -641,6 +657,167 @@ function PortfolioModal({ initial, onSave, onClose }) {
   );
 }
 
+// ─── Loan Given (Lending) Modal ───────────────────────────────────────────────
+function LoanGivenModal({ initial, onSave, onClose }) {
+  const [form, setForm] = useState(() => initial || blankLoanGiven());
+
+  useEffect(() => {
+    setForm(initial || blankLoanGiven());
+  }, [initial]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = () => {
+    if (!form.borrowerName?.trim() || !form.principalAmount) return;
+    onSave({ ...form });
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <div className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Landmark size={18} color="var(--accent-cyan)" />
+            {initial?.id ? 'Edit Loan Given' : 'Add Loan Given / Lending'}
+          </div>
+          <button className="btn btn-secondary btn-icon" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="modal-body">
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Borrower / Organization Name *</label>
+              <input
+                className="form-input"
+                value={form.borrowerName}
+                onChange={e => set('borrowerName', e.target.value)}
+                placeholder="e.g. ABC Organization, Tech Solutions, Friend"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Principal Amount Lent (₹) *</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.principalAmount}
+                onChange={e => set('principalAmount', e.target.value)}
+                placeholder="e.g. 500000"
+              />
+            </div>
+          </div>
+
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Monthly Payout / Return (₹) *</label>
+              <input
+                className="form-input"
+                type="number"
+                value={form.monthlyPayout}
+                onChange={e => set('monthlyPayout', e.target.value)}
+                placeholder="e.g. 15000"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payout Day of Month</label>
+              <input
+                className="form-input"
+                type="number"
+                min={1}
+                max={31}
+                value={form.payoutDay}
+                onChange={e => set('payoutDay', e.target.value)}
+                placeholder="e.g. 15"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Interest Rate / Terms</label>
+              <input
+                className="form-input"
+                value={form.interestRateText}
+                onChange={e => set('interestRateText', e.target.value)}
+                placeholder="e.g. 3% / month, 36% p.a."
+              />
+            </div>
+          </div>
+
+          <div className="form-row form-row-3">
+            <div className="form-group">
+              <label className="form-label">Date Lent (Start Date)</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.startDate}
+                onChange={e => set('startDate', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Tenure / Repayment Due Date</label>
+              <input
+                className="form-input"
+                type="date"
+                value={form.endDate}
+                onChange={e => set('endDate', e.target.value)}
+                placeholder="Leave blank if ongoing"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Status</label>
+              <select className="form-input" value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="Active">Active (Ongoing Payouts)</option>
+                <option value="Closed">Closed (Principal Repaid)</option>
+                <option value="Defaulted">Defaulted / Delayed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row form-row-2">
+            <div className="form-group">
+              <label className="form-label">Contact Person</label>
+              <input
+                className="form-input"
+                value={form.contactPerson}
+                onChange={e => set('contactPerson', e.target.value)}
+                placeholder="e.g. Director / Manager Name"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Contact Phone</label>
+              <input
+                className="form-input"
+                value={form.phone}
+                onChange={e => set('phone', e.target.value)}
+                placeholder="e.g. +91 9876543210"
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Agreement, Cheques &amp; Security Notes</label>
+            <textarea
+              className="form-input"
+              value={form.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="e.g. Post-dated cheques received for security, promissory note signed..."
+              style={{ minHeight: 65 }}
+            />
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={!form.borrowerName?.trim() || !form.principalAmount}
+          >
+            <Check size={14} /> Save Loan Record
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Policy Card ──────────────────────────────────────────────────────────────
 function PolicyCard({ policy, onEdit, onDelete, onTogglePayment }) {
   const [expanded, setExpanded] = useState(false);
@@ -862,6 +1039,177 @@ function PortfolioCard({ item, onEdit, onDelete }) {
               📝 {item.notes}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Loan Given (Lending) Card ────────────────────────────────────────────────
+function LoanGivenCard({ loan, onEdit, onDelete, onTogglePayout }) {
+  const [expanded, setExpanded] = useState(false);
+  const months12 = getLast12Months();
+  const curMonth = currentMonthKey();
+  const currentPayout = loan.payouts?.[curMonth];
+  const isCurrentPaid = currentPayout?.status === 'Received';
+
+  const statusCls = loan.status === 'Active' ? 'badge-green' : loan.status === 'Closed' ? 'badge-blue' : 'badge-red';
+
+  const totalInterestRecd = Object.values(loan.payouts || {}).reduce((sum, p) => {
+    return p?.status === 'Received' ? sum + Number(p.amount || loan.monthlyPayout || 0) : sum;
+  }, 0);
+
+  return (
+    <div className="vehicle-card" style={{ marginBottom: 12 }}>
+      <div className="vehicle-card-header" onClick={() => setExpanded(e => !e)}>
+        <div className="vehicle-icon" style={{ background: 'rgba(6,182,212,0.15)' }}>
+          <Landmark size={22} color="var(--accent-cyan)" />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>{loan.borrowerName || 'Unnamed Borrower'}</span>
+            <span className={`badge ${statusCls}`}>{loan.status || 'Active'}</span>
+            {loan.interestRateText && (
+              <span className="badge badge-muted">{loan.interestRateText}</span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap', fontSize: 13, color: 'var(--text-muted)' }}>
+            <span>💰 Principal Lent: <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(loan.principalAmount)}</strong></span>
+            {loan.monthlyPayout && (
+              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
+                💵 Return: {formatCurrency(loan.monthlyPayout)} / mo
+                {loan.payoutDay && <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 4 }}>(on {loan.payoutDay}th)</span>}
+              </span>
+            )}
+            {loan.contactPerson && (
+              <span>👤 {loan.contactPerson}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Current Month Quick Status Pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }} onClick={e => e.stopPropagation()}>
+          <button
+            className={`btn btn-sm ${isCurrentPaid ? 'btn-success' : 'btn-secondary'}`}
+            style={{
+              padding: '4px 10px',
+              fontSize: 12,
+              borderRadius: 'var(--radius-full)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              borderColor: isCurrentPaid ? 'var(--accent-green)' : 'var(--border-subtle)',
+              background: isCurrentPaid ? 'rgba(16,185,129,0.15)' : 'var(--bg-surface)'
+            }}
+            onClick={() => onTogglePayout(loan.id, curMonth)}
+            title={`Toggle payout for ${monthLabel(curMonth)}`}
+          >
+            {isCurrentPaid ? (
+              <>
+                <Check size={13} color="var(--accent-green)" />
+                <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>{monthLabel(curMonth).split(' ')[0]}: Received</span>
+              </>
+            ) : (
+              <>
+                <Clock size={13} color="var(--accent-amber)" />
+                <span style={{ color: 'var(--text-secondary)' }}>{monthLabel(curMonth).split(' ')[0]}: Mark Recd</span>
+              </>
+            )}
+          </button>
+
+          <button
+            className="btn btn-secondary btn-icon btn-sm"
+            onClick={() => onEdit(loan)}
+            title="Edit Loan Record"
+          >
+            <Edit2 size={13} />
+          </button>
+          <button
+            className="btn btn-danger btn-icon btn-sm"
+            onClick={() => onDelete(loan.id)}
+            title="Delete Loan Record"
+          >
+            <Trash2 size={13} />
+          </button>
+          <div onClick={() => setExpanded(e => !e)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+            {expanded ? <ChevronUp size={16} color="var(--text-muted)" /> : <ChevronDown size={16} color="var(--text-muted)" />}
+          </div>
+        </div>
+      </div>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <div className="vehicle-card-body">
+          <div className="grid-cols-3 gap-12 mb-16" style={{ background: 'var(--bg-base)', borderRadius: 'var(--radius-md)', padding: 14 }}>
+            <div>
+              <div className="text-sm text-muted">Total Interest Earned</div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--accent-green)' }}>
+                {formatCurrency(totalInterestRecd)}
+              </div>
+              <div className="text-sm text-secondary">
+                {Object.values(loan.payouts || {}).filter(p => p?.status === 'Received').length} months collected
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Lending Timeline</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                Started: {loan.startDate ? formatDate(loan.startDate) : '—'}
+              </div>
+              <div className="text-sm text-secondary">
+                Repayment Due: {loan.endDate ? formatDate(loan.endDate) : 'Ongoing'}
+              </div>
+            </div>
+            <div>
+              <div className="text-sm text-muted">Borrower Contact</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                {loan.contactPerson || '—'}
+              </div>
+              <div className="text-sm text-secondary">
+                {loan.phone ? <a href={`tel:${loan.phone}`} style={{ color: 'var(--accent-cyan)' }}>📞 {loan.phone}</a> : 'No phone listed'}
+              </div>
+            </div>
+          </div>
+
+          {loan.notes && (
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', marginBottom: 14, fontSize: 13, color: 'var(--text-secondary)' }}>
+              <strong>📝 Agreement / Security Notes:</strong> {loan.notes}
+            </div>
+          )}
+
+          {/* 12-Month Payment Receipt Grid */}
+          <div>
+            <div className="flex justify-between items-center mb-8">
+              <span className="text-sm text-secondary">
+                Monthly Payout Tracker (Click month to mark Received / Pending)
+              </span>
+              <span className="text-sm text-muted">Current: {monthLabel(curMonth)}</span>
+            </div>
+
+            <div className="month-grid">
+              {months12.map(month => {
+                const po = loan.payouts?.[month];
+                const isPaid = po?.status === 'Received';
+                const isPending = po?.status === 'Pending';
+                const cls = isPaid ? 'month-cell-paid' : isPending ? 'month-cell-unpaid' : 'month-cell-none';
+
+                return (
+                  <div
+                    key={month}
+                    className={`month-cell ${cls}`}
+                    onClick={() => onTogglePayout(loan.id, month)}
+                    title={`${monthLabel(month)}: ${isPaid ? 'Received' : isPending ? 'Pending' : 'Click to toggle'}`}
+                  >
+                    <div>{monthLabel(month).split(' ')[0].substring(0, 3)}</div>
+                    <div style={{ fontSize: 10, opacity: 0.7 }}>{monthLabel(month).split(' ')[1]}</div>
+                    {isPaid && <Check size={10} style={{ marginTop: 2, display: 'inline' }} />}
+                    {isPending && <Clock size={10} style={{ marginTop: 2, display: 'inline', color: 'var(--accent-amber)' }} />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -1142,12 +1490,15 @@ export default function Investments({ investments, updateInvestments }) {
   const [editingPolicy, setEditingPolicy] = useState(null);
   const [showPortfolioModal, setShowPortfolioModal] = useState(false);
   const [editingPortfolio, setEditingPortfolio] = useState(null);
+  const [showLoanModal, setShowLoanModal] = useState(false);
+  const [editingLoan, setEditingLoan] = useState(null);
   const [search, setSearch] = useState('');
   const [filterInsurer, setFilterInsurer] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
   const policies = investments?.policies || [];
   const portfolio = investments?.portfolio || [];
+  const loansGiven = investments?.loansGiven || [];
 
   // Policy CRUD
   const savePolicy = (pol) => {
@@ -1193,6 +1544,41 @@ export default function Investments({ investments, updateInvestments }) {
     updateInvestments({ ...investments, portfolio: portfolio.filter(p => p.id !== id) });
   };
 
+  // Lending CRUD
+  const saveLoanGiven = (loan) => {
+    const existing = loansGiven.findIndex(l => l.id === loan.id);
+    const updated = existing >= 0
+      ? loansGiven.map(l => l.id === loan.id ? loan : l)
+      : [loan, ...loansGiven];
+    updateInvestments({ ...investments, loansGiven: updated });
+    setShowLoanModal(false);
+    setEditingLoan(null);
+  };
+
+  const deleteLoanGiven = (id) => {
+    if (!window.confirm('Delete this loan record?')) return;
+    updateInvestments({ ...investments, loansGiven: loansGiven.filter(l => l.id !== id) });
+  };
+
+  const toggleLoanPayout = (loanId, monthKey) => {
+    const loan = loansGiven.find(l => l.id === loanId);
+    if (!loan) return;
+    const current = loan.payouts?.[monthKey]?.status;
+    const nextStatus = current === 'Received' ? 'Pending' : current === 'Pending' ? null : 'Received';
+    const newPayouts = { ...(loan.payouts || {}) };
+    if (nextStatus === null) {
+      delete newPayouts[monthKey];
+    } else {
+      newPayouts[monthKey] = {
+        status: nextStatus,
+        date: new Date().toISOString().split('T')[0],
+        amount: Number(loan.monthlyPayout || 0)
+      };
+    }
+    const updated = loansGiven.map(l => l.id === loanId ? { ...l, payouts: newPayouts } : l);
+    updateInvestments({ ...investments, loansGiven: updated });
+  };
+
   // Filtered lists
   const filteredPolicies = policies.filter(p => {
     const q = search.toLowerCase();
@@ -1214,6 +1600,17 @@ export default function Investments({ investments, updateInvestments }) {
       || p.platform?.toLowerCase().includes(q);
   });
 
+  const filteredLoans = loansGiven.filter(l => {
+    const q = search.toLowerCase();
+    const matchSearch = !q
+      || l.borrowerName?.toLowerCase().includes(q)
+      || l.contactPerson?.toLowerCase().includes(q)
+      || l.notes?.toLowerCase().includes(q)
+      || l.interestRateText?.toLowerCase().includes(q);
+    const matchStatus = !filterStatus || l.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
   // Summary Metrics
   const activePolicies = policies.filter(p => p.status === 'Active');
   const totalAnnualPremium = activePolicies.reduce((sum, p) => {
@@ -1223,6 +1620,16 @@ export default function Investments({ investments, updateInvestments }) {
   }, 0);
   const totalSumAssured = policies.reduce((sum, p) => sum + Number(p.sumAssured || 0), 0);
   const totalPortfolioVal = portfolio.reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
+  const totalPrincipalLent = loansGiven
+    .filter(l => l.status === 'Active')
+    .reduce((sum, l) => sum + Number(l.principalAmount || 0), 0);
+  const totalMonthlyLendingPayout = loansGiven
+    .filter(l => l.status === 'Active')
+    .reduce((sum, l) => sum + Number(l.monthlyPayout || 0), 0);
+  const curMonthKey = currentMonthKey();
+  const activeLoans = loansGiven.filter(l => l.status === 'Active');
+  const curMonthReceivedCount = activeLoans.filter(l => l.payouts?.[curMonthKey]?.status === 'Received').length;
+
   const upcomingAlerts = policies.filter(p => {
     const d = p.nextDueDate ? daysUntil(p.nextDueDate) : null;
     return d !== null && d <= 30;
@@ -1254,18 +1661,18 @@ export default function Investments({ investments, updateInvestments }) {
           <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.15)' }}>
             <Sparkles size={20} color="var(--accent-green)" />
           </div>
-          <div className="stat-label">Total Life Cover (SA)</div>
+          <div className="stat-label">Protection Cover (Life &amp; Health)</div>
           <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(totalSumAssured)}</div>
-          <div className="stat-sub">Combined sum assured</div>
+          <div className="stat-sub">Pure risk cover (not an asset)</div>
         </div>
 
         <div className="stat-card">
           <div className="stat-icon" style={{ background: 'rgba(6,182,212,0.15)' }}>
             <Briefcase size={20} color="var(--accent-cyan)" />
           </div>
-          <div className="stat-label">Portfolio Assets</div>
-          <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(totalPortfolioVal)}</div>
-          <div className="stat-sub">{portfolio.length} investments tracked</div>
+          <div className="stat-label">Portfolio &amp; Lent Assets</div>
+          <div className="stat-value" style={{ fontSize: 20 }}>{formatCurrency(totalPortfolioVal + totalPrincipalLent)}</div>
+          <div className="stat-sub">{portfolio.length} investments · {loansGiven.length} loans</div>
         </div>
       </div>
 
@@ -1284,6 +1691,13 @@ export default function Investments({ investments, updateInvestments }) {
         >
           <Briefcase size={14} style={{ display: 'inline', marginRight: 6 }} />
           Portfolio &amp; SWP ({portfolio.length})
+        </button>
+        <button
+          className={`tab ${tab === 'lending' ? 'active' : ''}`}
+          onClick={() => setTab('lending')}
+        >
+          <Landmark size={14} style={{ display: 'inline', marginRight: 6 }} />
+          Loans Given ({loansGiven.length})
         </button>
         <button
           className={`tab ${tab === 'calendar' ? 'active' : ''}`}
@@ -1434,6 +1848,99 @@ export default function Investments({ investments, updateInvestments }) {
         </div>
       )}
 
+      {/* ── Tab: Lending / Loans Given ──────────────────────────────── */}
+      {tab === 'lending' && (
+        <div>
+          {/* Lending Overview Stat Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 18 }}>
+            <div className="stat-card" style={{ padding: '14px 18px' }}>
+              <div className="stat-label">Total Principal Lent (Asset)</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-cyan)' }}>
+                {formatCurrency(totalPrincipalLent)}
+              </div>
+              <div className="stat-sub">{activeLoans.length} active loan{activeLoans.length !== 1 ? 's' : ''} out</div>
+            </div>
+
+            <div className="stat-card" style={{ padding: '14px 18px' }}>
+              <div className="stat-label">Expected Monthly Inflow</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent-green)' }}>
+                {formatCurrency(totalMonthlyLendingPayout)} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted)' }}>/ month</span>
+              </div>
+              <div className="stat-sub">Recurring monthly returns</div>
+            </div>
+
+            <div className="stat-card" style={{ padding: '14px 18px' }}>
+              <div className="stat-label">{monthLabel(curMonthKey)} Status</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: curMonthReceivedCount === activeLoans.length && activeLoans.length > 0 ? 'var(--accent-green)' : 'var(--accent-amber)' }}>
+                {curMonthReceivedCount} of {activeLoans.length} Recd
+              </div>
+              <div className="stat-sub">
+                {activeLoans.length - curMonthReceivedCount === 0
+                  ? 'All payouts collected this month'
+                  : `${activeLoans.length - curMonthReceivedCount} payout pending this month`}
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Actions Bar */}
+          <div className="flex gap-10 mb-16 flex-wrap items-center">
+            <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+              <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                className="form-input"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search borrower name, contact, notes, or terms..."
+                style={{ paddingLeft: 36 }}
+              />
+            </div>
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: 130 }}
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+            >
+              <option value="">All Status</option>
+              <option value="Active">Active</option>
+              <option value="Closed">Closed</option>
+              <option value="Defaulted">Defaulted</option>
+            </select>
+            <button
+              className="btn btn-primary"
+              onClick={() => { setEditingLoan(null); setShowLoanModal(true); }}
+            >
+              <Plus size={15} /> Add Loan Given
+            </button>
+          </div>
+
+          {filteredLoans.length === 0 && (
+            <div className="empty-state">
+              <Landmark size={48} />
+              <div className="empty-state-title">
+                {loansGiven.length === 0 ? 'No loans or lending records added yet' : 'No loans match your search'}
+              </div>
+              <div className="empty-state-desc">
+                {loansGiven.length === 0
+                  ? 'Track money lent to organizations, businesses, or individuals, along with fixed monthly interest/returns and payout receipts.'
+                  : 'Try clearing your search query or status filter.'}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {filteredLoans.map(loan => (
+              <LoanGivenCard
+                key={loan.id}
+                loan={loan}
+                onEdit={(l) => { setEditingLoan(l); setShowLoanModal(true); }}
+                onDelete={deleteLoanGiven}
+                onTogglePayout={toggleLoanPayout}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Tab 3: Calendar ──────────────────────────────────────────── */}
       {tab === 'calendar' && (
         <PaymentCalendar investments={investments} />
@@ -1453,6 +1960,14 @@ export default function Investments({ investments, updateInvestments }) {
           initial={editingPortfolio}
           onSave={savePortfolioItem}
           onClose={() => { setShowPortfolioModal(false); setEditingPortfolio(null); }}
+        />
+      )}
+
+      {showLoanModal && (
+        <LoanGivenModal
+          initial={editingLoan}
+          onSave={saveLoanGiven}
+          onClose={() => { setShowLoanModal(false); setEditingLoan(null); }}
         />
       )}
     </div>

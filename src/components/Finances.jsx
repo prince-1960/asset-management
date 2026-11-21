@@ -406,11 +406,18 @@ export default function Finances({ finances = {}, updateFinances, vehicles = [],
       const ccBills = isCurrentMonth ? totalMonthlyBills : 0;
       const ccObligations = ccBills + ccEmiTotal;
 
-      // Inflow (Salary + SWP)
+      // Inflow (Salary + SWP + Lending Payouts)
       let expectedInflow = Number(salary.amount || 0);
       if (investments?.swp?.monthlyWithdrawal) {
         expectedInflow += Number(investments.swp.monthlyWithdrawal);
       }
+      (investments?.loansGiven || []).forEach(l => {
+        if (l.status === 'Active' && l.monthlyPayout) {
+          if (!l.endDate || l.endDate >= monthKey) {
+            expectedInflow += Number(l.monthlyPayout);
+          }
+        }
+      });
 
       const totalOutflow = vehicleEmiTotal + policyPremiumsTotal + sipsTotal + ccObligations;
       const net = expectedInflow - totalOutflow;

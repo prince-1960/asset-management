@@ -142,6 +142,7 @@ function defaultInvestments() {
     additionalInvestments: [],
     policies: [],
     portfolio: [],
+    loansGiven: [],
   };
 }
 
@@ -154,6 +155,7 @@ export const mergeInvestments = (loaded) => {
     ...loaded,
     policies: loaded.policies || [],
     portfolio: loaded.portfolio || [],
+    loansGiven: loaded.loansGiven || [],
     additionalInvestments: loaded.additionalInvestments || [],
     swp: { ...def.swp, ...(loaded.swp || {}) },
   };

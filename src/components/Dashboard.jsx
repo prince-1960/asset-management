@@ -160,6 +160,41 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
     return { bills, emis, totalDue: bills + emis, totalOutstanding };
   }, [finances?.creditCards]);
 
+  // ── Monthly Loans Given (Lending) Inflow ──────────────────────────────
+  const lendingInflow = useMemo(() => {
+    let total = 0;
+    (investments?.loansGiven || []).forEach(l => {
+      if (l.status !== 'Active') return;
+      const payout = l.payouts?.[thisMonth];
+      const monthlyAmt = Number(l.monthlyPayout || 0);
+      if (payout?.status === 'Received') {
+        total += Number(payout.amount || monthlyAmt);
+      } else if (!payout && monthlyAmt > 0) {
+        total += monthlyAmt;
+      }
+    });
+    return total;
+  }, [investments?.loansGiven, thisMonth]);
+
+  // ── Principal Amount Lent (Asset Receivable) ──────────────────────────
+  const totalPrincipalLent = useMemo(() => {
+    return (investments?.loansGiven || []).reduce((sum, l) => {
+      return l.status === 'Active' ? sum + Number(l.principalAmount || 0) : sum;
+    }, 0);
+  }, [investments?.loansGiven]);
+
+  // ── Real Policy Maturity Assets (Excluding Health & pure Term) ─────────
+  const policyMaturityAssets = useMemo(() => {
+    return (investments?.policies || []).reduce((sum, p) => {
+      if (p.status !== 'Active') return sum;
+      // Health insurance is pure protection cover, NEVER an investment asset
+      if (p.type === 'Health') return sum;
+      // Pure Term insurance without maturity is life cover, not an asset
+      if (p.type === 'Term' && !p.maturityAmount) return sum;
+      return sum + Number(p.maturityAmount || 0);
+    }, 0);
+  }, [investments?.policies]);
+
   // ── Monthly Outflow Calculations (EMIs + Policies Due + SIPs + CC) ─────
   const monthlyObligations = useMemo(() => {
     let policyDueTotal = 0;
@@ -193,7 +228,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
 
   // ── Monthly P&L Summary ───────────────────────────────────────────────
   const monthlyPL = useMemo(() => {
-    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount + salaryInflow;
+    const totalInflow = fleetIncome + rentStats.collected + swpReceivedAmount + salaryInflow + lendingInflow;
     const totalOutflow = monthlyObligations.totalOutflow;
     const netCashflow = totalInflow - totalOutflow;
     const isSurplus = netCashflow >= 0;
@@ -206,20 +241,30 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       fleetIncome,
       rentCollected: rentStats.collected,
       swpReceived: swpReceivedAmount,
-      salaryInflow
+      salaryInflow,
+      lendingInflow
     };
-  }, [fleetIncome, rentStats.collected, swpReceivedAmount, salaryInflow, monthlyObligations.totalOutflow]);
+  }, [fleetIncome, rentStats.collected, swpReceivedAmount, salaryInflow, lendingInflow, monthlyObligations.totalOutflow]);
 
   // ── Net Worth Estimator ───────────────────────────────────────────────
   const netWorth = useMemo(() => {
     const swpCorpus = Number(investments?.swp?.corpus || 0);
     const portfolioValue = (investments?.portfolio || []).reduce((sum, p) => sum + Number(p.currentValue || p.amount || 0), 0);
-    const sumAssured = (investments?.policies || []).reduce((sum, p) => sum + Number(p.maturityAmount || p.sumAssured || 0), 0);
-    const totalAssets = swpCorpus + portfolioValue + sumAssured;
+    // Realized wealth assets: SWP + Portfolio + Loans Given (Principal Lent) + Real Policy Maturities (excluding Health & pure Term)
+    const totalAssets = swpCorpus + portfolioValue + policyMaturityAssets + totalPrincipalLent;
     const totalLiabilities = loanStats.totalPending + ccObligations.totalOutstanding;
     const net = totalAssets - totalLiabilities;
-    return { swpCorpus, portfolioValue, sumAssured, totalAssets, totalLiabilities, net, ccOutstanding: ccObligations.totalOutstanding };
-  }, [investments, loanStats.totalPending, ccObligations.totalOutstanding]);
+    return {
+      swpCorpus,
+      portfolioValue,
+      policyMaturityAssets,
+      totalPrincipalLent,
+      totalAssets,
+      totalLiabilities,
+      net,
+      ccOutstanding: ccObligations.totalOutstanding
+    };
+  }, [investments, policyMaturityAssets, totalPrincipalLent, loanStats.totalPending, ccObligations.totalOutstanding]);
 
   // ── 6-Month Income Trend Data ─────────────────────────────────────────
   const trendData = useMemo(() => {
@@ -243,16 +288,28 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
       } else if (!salRecord && salaryAmount > 0 && monthKey === thisMonth) {
         sal = salaryAmount;
       }
+      let lending = 0;
+      (investments?.loansGiven || []).forEach(l => {
+        if (l.status !== 'Active') return;
+        const payout = l.payouts?.[monthKey];
+        const monthlyAmt = Number(l.monthlyPayout || 0);
+        if (payout?.status === 'Received') {
+          lending += Number(payout.amount || monthlyAmt);
+        } else if (!payout && monthlyAmt > 0 && monthKey === thisMonth) {
+          lending += monthlyAmt;
+        }
+      });
       return {
         key: monthKey,
         label: monthLabel(monthKey).split(' ')[0].slice(0, 3),
         fleet,
         rent,
         salary: sal,
-        total: fleet + rent + sal
+        lending,
+        total: fleet + rent + sal + lending
       };
     });
-  }, [last6Months, vehicles, rooms, finances?.salary, salaryAmount, thisMonth]);
+  }, [last6Months, vehicles, rooms, finances?.salary, investments?.loansGiven, salaryAmount, thisMonth]);
 
   const maxTrendTotal = Math.max(...trendData.map(d => d.total), 1);
 
@@ -329,8 +386,10 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
                 {formatCurrency(monthlyPL.totalInflow)}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                {monthlyPL.salaryInflow > 0 && `Salary: ${formatCurrency(monthlyPL.salaryInflow)} · `}
+                {monthlyPL.lendingInflow > 0 && `Lending: ${formatCurrency(monthlyPL.lendingInflow)} · `}
                 Fleet: {formatCurrency(fleetIncome)} · Rent: {formatCurrency(rentStats.collected)}
-                {monthlyPL.salaryInflow > 0 && ` · Salary: ${formatCurrency(monthlyPL.salaryInflow)}`}
+                {swpReceivedAmount > 0 && ` · SWP: ${formatCurrency(swpReceivedAmount)}`}
               </div>
             </div>
 
@@ -360,7 +419,7 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
                 <Sparkles size={18} color="var(--accent-indigo)" />
                 Estimated Net Worth
               </div>
-              <div className="section-subtitle">Tracked Assets (SWP + Portfolio + Policies) minus Active Debts</div>
+              <div className="section-subtitle">Realizable Assets (SWP + Portfolio + Loans Given + Policy Maturities) minus Active Debts</div>
             </div>
             <span className="badge badge-purple" style={{ fontSize: 12, padding: '4px 10px' }}>
               Live Portfolio
@@ -384,6 +443,8 @@ export default function Dashboard({ vehicles, rooms, investments, updateVehicles
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                 SWP: {formatCurrency(netWorth.swpCorpus)} · Inv: {formatCurrency(netWorth.portfolioValue)}
+                {netWorth.totalPrincipalLent > 0 && ` · Lent: ${formatCurrency(netWorth.totalPrincipalLent)}`}
+                {netWorth.policyMaturityAssets > 0 && ` · Mat: ${formatCurrency(netWorth.policyMaturityAssets)}`}
               </div>
             </div>
 
